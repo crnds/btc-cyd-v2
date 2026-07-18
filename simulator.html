@@ -1,0 +1,2212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CYD ESP32 Hardware Simulator — btc-ticker</title>
+  <!-- Google Fonts: Inter for UI, Press Start 2P for LCD screen, JetBrains Mono for Serial Terminal -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --panel-bg: rgba(17, 24, 39, 0.65);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #f59e0b; /* Bitcoin Amber */
+      --accent-rgb: 245, 158, 11;
+      --green: #10b981;
+      --red: #ef4444;
+      --pcb-yellow: #d4af37;
+      --pcb-dark: #b89025;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(30, 41, 59, 0.5) 0, transparent 50%),
+        radial-gradient(at 50% 0%, rgba(245, 158, 11, 0.08) 0, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(15, 23, 42, 0.8) 0, transparent 50%);
+    }
+
+    /* Header Styling */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(10px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 2rem;
+      height: 2rem;
+      background: linear-gradient(135deg, var(--accent), #d97706);
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #000;
+      box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+    }
+
+    .brand h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+    }
+
+    .brand p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .header-status {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.8rem;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.375rem;
+      border: 1px solid var(--panel-border);
+    }
+
+    .status-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+      display: inline-block;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .status-dot.active {
+      background-color: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .status-dot.error {
+      background-color: var(--red);
+      box-shadow: 0 0 8px var(--red);
+    }
+
+    /* Main Grid Layout */
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      padding: 2rem;
+      flex: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 1024px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Glassmorphism Cards */
+    .card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Left Side: Hardware Board */
+    .hardware-section {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    /* CYD Board Wrapper */
+    .cyd-board {
+      width: 380px;
+      height: 480px;
+      background-color: var(--pcb-yellow);
+      background-image: 
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05) 0%, transparent 80%),
+        repeating-linear-gradient(45deg, rgba(184, 144, 37, 0.1) 0, rgba(184, 144, 37, 0.1) 2px, transparent 0, transparent 8px);
+      border-radius: 1.5rem;
+      border: 4px solid var(--pcb-dark);
+      box-shadow: 
+        0 25px 50px -12px rgba(0, 0, 0, 0.7),
+        inset 0 0 15px rgba(255, 255, 255, 0.2);
+      position: relative;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+      transition: transform 0.2s ease;
+    }
+
+    /* Screw holes in 4 corners */
+    .screw-hole {
+      width: 18px;
+      height: 18px;
+      background: radial-gradient(circle, #666 40%, #222 70%, #d4af37 80%, #999 100%);
+      border-radius: 50%;
+      position: absolute;
+      border: 2px solid #555;
+    }
+    .screw-top-left { top: 12px; left: 12px; }
+    .screw-top-right { top: 12px; right: 12px; }
+    .screw-bottom-left { bottom: 12px; left: 12px; }
+    .screw-bottom-right { bottom: 12px; right: 12px; }
+
+    /* Screen Bezel (LCD module outline) */
+    .lcd-bezel {
+      width: 320px;
+      height: 270px;
+      background: #18181b;
+      border-radius: 0.5rem;
+      border: 5px solid #27272a;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 4px 6px rgba(0,0,0,0.3);
+      position: relative;
+      margin-top: 45px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Screen element itself */
+    .lcd-screen {
+      width: 300px; /* Fits 320x240 scaled */
+      height: 225px; /* Aspect 4:3 */
+      background-color: #000;
+      position: relative;
+      cursor: pointer;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.9);
+    }
+
+    /* Actual Canvas */
+    #screenCanvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      transition: filter 0.1s linear;
+    }
+
+    /* Glare effect overlay on LCD */
+    .lcd-glare {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.15) 100%);
+      z-index: 5;
+    }
+
+    /* LCD Bezel Text */
+    .bezel-text-top {
+      position: absolute;
+      top: 6px;
+      color: #71717a;
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-family: monospace;
+    }
+    .bezel-text-bottom {
+      position: absolute;
+      bottom: 4px;
+      color: #71717a;
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      font-family: monospace;
+    }
+
+    /* Silkscreen text on Yellow PCB */
+    .silkscreen-title {
+      position: absolute;
+      top: 15px;
+      font-weight: 800;
+      font-size: 11px;
+      color: #27272a;
+      letter-spacing: 0.05em;
+      font-family: monospace;
+      text-shadow: 0.5px 0.5px 0 rgba(255,255,255,0.2);
+    }
+    .silkscreen-sub {
+      position: absolute;
+      top: 28px;
+      font-weight: 600;
+      font-size: 8px;
+      color: #52525b;
+      letter-spacing: 0.02em;
+      font-family: monospace;
+    }
+
+    /* ESP32 WROOM module simulated graphic on PCB background */
+    .esp32-module {
+      position: absolute;
+      bottom: 25px;
+      left: 30px;
+      width: 80px;
+      height: 90px;
+      background: #71717a;
+      border: 1px solid #3f3f46;
+      border-radius: 4px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      padding: 5px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .esp32-antenna {
+      height: 20px;
+      background: #18181b;
+      border-radius: 2px;
+      margin-bottom: 5px;
+    }
+    .esp32-shield {
+      flex: 1;
+      background: linear-gradient(135deg, #a1a1aa, #52525b);
+      border-radius: 2px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #27272a;
+      font-size: 6px;
+      font-weight: 800;
+      font-family: monospace;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    /* RGB LED on Board */
+    .board-led-container {
+      position: absolute;
+      bottom: 70px;
+      right: 50px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .board-led-label {
+      font-size: 6px;
+      font-family: monospace;
+      font-weight: 700;
+      color: #27272a;
+    }
+    .board-led {
+      width: 12px;
+      height: 12px;
+      background: #e4e4e7;
+      border: 1px solid #a1a1aa;
+      border-radius: 50%;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+      transition: background-color 0.2s, box-shadow 0.2s;
+    }
+    .board-led.blue {
+      background-color: #3b82f6;
+      box-shadow: 0 0 10px #3b82f6, inset 0 1px 1px white;
+    }
+    .board-led.green {
+      background-color: #10b981;
+      box-shadow: 0 0 10px #10b981, inset 0 1px 1px white;
+    }
+    .board-led.red {
+      background-color: #ef4444;
+      box-shadow: 0 0 10px #ef4444, inset 0 1px 1px white;
+    }
+    .board-led.off {
+      background-color: #71717a;
+      box-shadow: none;
+    }
+
+    /* Reset button */
+    .reset-btn-container {
+      position: absolute;
+      bottom: 25px;
+      right: 50px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .reset-btn-label {
+      font-size: 6px;
+      font-family: monospace;
+      font-weight: 700;
+      color: #27272a;
+    }
+    .reset-btn {
+      width: 18px;
+      height: 18px;
+      background: radial-gradient(circle, #f87171 20%, #ef4444 80%, #b91c1c 100%);
+      border: 2px solid #52525b;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+    .reset-btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 1px rgba(0,0,0,0.4);
+      background: radial-gradient(circle, #ef4444 20%, #b91c1c 80%);
+    }
+
+    /* Ports graphics at the bottom */
+    .cyd-micro-usb {
+      position: absolute;
+      bottom: 0;
+      left: 150px;
+      width: 40px;
+      height: 12px;
+      background: #3f3f46;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+      border: 1px solid #18181b;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 6px;
+    }
+    .cyd-micro-usb-connector {
+      width: 24px;
+      height: 6px;
+      background: #71717a;
+      margin: 0 auto;
+      border-radius: 1px;
+    }
+
+    /* Right Side: Config Dashboard */
+    .dashboard-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--panel-border);
+      margin-bottom: 1.5rem;
+      gap: 0.5rem;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.65rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-content {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* Forms, Toggles & Controls */
+    .control-group {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 0.75rem;
+      padding: 1rem;
+    }
+
+    .control-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .setting-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .setting-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .setting-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    /* Switch styling */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255,255,255,0.15);
+      transition: .3s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    input:checked + .slider {
+      background-color: var(--green);
+    }
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    /* Button and Input Styling */
+    .btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .btn-primary {
+      background: linear-gradient(to right, var(--accent), #d97706);
+      border: none;
+      color: #000;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(to right, #fbbf24, #f59e0b);
+      box-shadow: 0 0 10px rgba(245,158,11, 0.3);
+    }
+    .btn-red {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+    .btn-red:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+
+    .input-text {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.375rem;
+      color: var(--text-main);
+      padding: 0.4rem 0.65rem;
+      font-size: 0.85rem;
+      font-family: monospace;
+      outline: none;
+      width: 100px;
+      text-align: right;
+    }
+    .input-text:focus {
+      border-color: var(--accent);
+    }
+
+    .select-dropdown {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.375rem;
+      color: var(--text-main);
+      padding: 0.4rem 0.65rem;
+      font-size: 0.85rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Slider Styling */
+    .range-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.1);
+      outline: none;
+    }
+    .range-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .slider-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+    }
+
+    /* Status Grid */
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .status-card {
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.03);
+      border-radius: 0.5rem;
+      padding: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .status-card-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    .status-card-val {
+      font-family: monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    /* Table styles for DB inspector */
+    .table-container {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid var(--panel-border);
+      border-radius: 0.5rem;
+    }
+    .db-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      font-family: monospace;
+      text-align: left;
+    }
+    .db-table th {
+      background: rgba(255,255,255,0.04);
+      padding: 0.5rem;
+      color: var(--text-muted);
+      position: sticky;
+      top: 0;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .db-table td {
+      padding: 0.4rem 0.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .db-table tr:hover {
+      background: rgba(255,255,255,0.02);
+    }
+
+    /* Bottom Section: Serial Console */
+    .serial-section {
+      grid-column: 1 / -1;
+      background: #070a13;
+      border: 1px solid var(--panel-border);
+      border-radius: 1rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+
+    .serial-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    .serial-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      font-family: monospace;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .serial-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .serial-search {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--panel-border);
+      border-radius: 0.25rem;
+      color: var(--text-main);
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      outline: none;
+      width: 150px;
+    }
+
+    .serial-log-container {
+      height: 200px;
+      overflow-y: auto;
+      padding: 1rem 1.5rem;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: #e4e4e7;
+    }
+
+    .log-line {
+      margin-bottom: 0.25rem;
+      white-space: pre-wrap;
+    }
+
+    .log-time {
+      color: #71717a;
+    }
+
+    .log-level-info { color: #10b981; }
+    .log-level-warning { color: #f59e0b; }
+    .log-level-error { color: #ef4444; }
+    .log-level-debug { color: #8b5cf6; }
+
+    .log-module {
+      color: #3b82f6;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">฿</div>
+      <div>
+        <h1>Cheap Yellow Display (CYD) Ticker Simulator</h1>
+        <p>ESP32-2432S028R Hardware Simulation (Thailand ICT-7)</p>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="status-item">
+        <span class="status-label">WiFi SSID: <b>BUY_BITCOIN</b></span>
+        <span id="wifiIndicator" class="status-dot"></span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">NTP Sync</span>
+        <span id="ntpIndicator" class="status-dot"></span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Binance API</span>
+        <span id="apiIndicator" class="status-dot"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Container -->
+  <div class="container">
+
+    <!-- Left: Hardware Board -->
+    <div class="card hardware-section">
+      <!-- The CYD Board Mockup -->
+      <div class="cyd-board" id="cydBoard">
+        <!-- Screw holes in 4 corners -->
+        <div class="screw-hole screw-top-left"></div>
+        <div class="screw-hole screw-top-right"></div>
+        <div class="screw-hole screw-bottom-left"></div>
+        <div class="screw-hole screw-bottom-right"></div>
+
+        <!-- Title silkscreen printing -->
+        <div class="silkscreen-title">ESP32-2432S028R</div>
+        <div class="silkscreen-sub">SMART DISPLAY 320x240</div>
+
+        <!-- LCD Module -->
+        <div class="lcd-bezel">
+          <div class="bezel-text-top">ILI9341 2.8" TFT</div>
+          <!-- Screen Frame -->
+          <div class="lcd-screen" id="lcdScreen" title="Tap Screen to cycle brightness step (230 -> 120 -> 40 -> 8)">
+            <canvas id="screenCanvas" width="320" height="240"></canvas>
+            <!-- LCD Glare Overlay -->
+            <div class="lcd-glare"></div>
+          </div>
+          <div class="bezel-text-bottom">RESISTIVE TOUCH CONTROLLER</div>
+        </div>
+
+        <!-- Simulated ESP32 module on PCB -->
+        <div class="esp32-module">
+          <div class="esp32-antenna"></div>
+          <div class="esp32-shield">
+            ESP32<br>WROOM-32E<br>
+            <span style="font-size:4px; opacity:0.7;">4MB FLASH</span>
+          </div>
+        </div>
+
+        <!-- Board status RGB LED -->
+        <div class="board-led-container">
+          <div class="board-led off" id="boardLed"></div>
+          <div class="board-led-label">RGB LED</div>
+        </div>
+
+        <!-- Reset Button -->
+        <div class="reset-btn-container">
+          <button class="reset-btn" id="resetBtn" title="ESP32 Hard Reset"></button>
+          <div class="reset-btn-label">RESET</div>
+        </div>
+
+        <!-- Micro USB Port at bottom center -->
+        <div class="cyd-micro-usb">
+          <div class="cyd-micro-usb-connector"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Config Dashboard -->
+    <div class="card">
+      <div class="dashboard-tabs">
+        <button class="tab-btn active" data-tab="controls">⚡ Controls</button>
+        <button class="tab-btn" data-tab="inspector">🔍 Inspector</button>
+        <button class="tab-btn" data-tab="storage">📁 Storage</button>
+        <button class="tab-btn" data-tab="candles-tab">📈 Candles</button>
+      </div>
+
+      <!-- TAB: Controls -->
+      <div class="tab-content active" id="tab-controls">
+        
+        <!-- Simulation Speed -->
+        <div class="control-group">
+          <div class="control-title">Simulated Clock</div>
+          <div class="setting-row">
+            <span class="setting-label">Time Accelerator</span>
+            <span class="status-card-val" id="timeSpeedVal">1x</span>
+          </div>
+          <input type="range" class="range-slider" id="timeSpeedSlider" min="1" max="300" value="1">
+          <div class="slider-info">
+            <span>Real-time (1x)</span>
+            <span>Fast (60x = 1min/sec)</span>
+            <span>Hyper (300x = 5min/sec)</span>
+          </div>
+        </div>
+
+        <!-- WiFi and Networking Controls -->
+        <div class="control-group">
+          <div class="control-title">Network Conditions</div>
+          <div class="setting-row">
+            <div>
+              <span class="setting-label">WiFi Connection State</span>
+              <div class="setting-desc">Simulate router drops or connection loss</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="wifiSwitch" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="setting-row" style="margin-top:0.75rem;">
+            <div>
+              <span class="setting-label">Binance API Availability</span>
+              <div class="setting-desc">Simulate server timeouts or endpoint failure</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="apiSwitch" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Price Provider Controls -->
+        <div class="control-group">
+          <div class="control-title">Market Feed & Simulator</div>
+          <div class="setting-row">
+            <span class="setting-label">Data Provider</span>
+            <select class="select-dropdown" id="dataProviderSelect">
+              <option value="live">Live Binance HTTP API</option>
+              <option value="mock">Local Trend Generator</option>
+            </select>
+          </div>
+          
+          <div id="mockControls" style="display:none; margin-top:1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top:0.75rem;">
+            <div class="setting-row">
+              <span class="setting-label">Simulated Market Trend</span>
+              <select class="select-dropdown" id="mockTrendSelect">
+                <option value="random">Random Walk</option>
+                <option value="bull">Bull Run (Upwards)</option>
+                <option value="bear">Bear Market (Downwards)</option>
+                <option value="flat">Sideways Range</option>
+              </select>
+            </div>
+            
+            <div class="setting-row" style="margin-top:0.75rem;">
+              <span class="setting-label">Pump/Dump Manual Slider</span>
+              <span class="status-card-val" id="manualPriceVal">$98,000</span>
+            </div>
+            <input type="range" class="range-slider" id="manualPriceSlider" min="50000" max="150000" step="50" value="98000">
+            <div class="slider-info">
+              <span>$50,000</span>
+              <span>Current Simulated Price</span>
+              <span>$150,000</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB: Inspector -->
+      <div class="tab-content" id="tab-inspector">
+        <div class="control-title">CYD Hardware Variables</div>
+        <div class="status-grid">
+          <div class="status-card">
+            <span class="status-card-label">ESP32 Uptime</span>
+            <span class="status-card-val" id="uptimeVal">0s</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">Free Heap Space</span>
+            <span class="status-card-val" id="heapVal">265 KB</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">IP Address</span>
+            <span class="status-card-val" id="ipAddressVal">no ip</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">WiFi Status</span>
+            <span class="status-card-val" id="wifiStatusVal">WL_DISCONNECTED</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">LCD Backlight Step</span>
+            <span class="status-card-val" id="backlightVal">0 (PWM 230)</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">Binance API Hits</span>
+            <span class="status-card-val" id="apiHitsVal">0</span>
+          </div>
+        </div>
+
+        <div class="control-title" style="margin-top: 1rem;">Active Candle Assembly</div>
+        <div class="status-grid">
+          <div class="status-card">
+            <span class="status-card-label">Forming Open Epoch</span>
+            <span class="status-card-val" id="formingEpochVal">--</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">Forming Age</span>
+            <span class="status-card-val" id="formingAgeVal">--</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">Current O / H / L / C</span>
+            <span class="status-card-val" id="formingOhlcVal">--</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">Total DB Records</span>
+            <span class="status-card-val" id="totalRecordsVal">0 / 288</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Storage -->
+      <div class="tab-content" id="tab-storage">
+        <div class="control-title">LittleFS Mini-Database (/candles.bin)</div>
+        <p class="setting-desc" style="margin-bottom: 0.75rem;">
+          Persists candle history on flash. Ring buffer uses slot = (openEpoch / 300) % 288. Saves forming candle every 60s & on boundary closes.
+        </p>
+
+        <div class="status-grid" style="margin-bottom:1rem;">
+          <div class="status-card">
+            <span class="status-card-label">File Name</span>
+            <span class="status-card-val" style="color:var(--accent);">/candles.bin</span>
+          </div>
+          <div class="status-card">
+            <span class="status-card-label">Database Size</span>
+            <span class="status-card-val" id="fsSizeVal">5760 bytes</span>
+          </div>
+        </div>
+
+        <div class="control-group" style="display:flex; flex-direction:column; gap:0.75rem;">
+          <div class="setting-row">
+            <span class="setting-label">LittleFS Sector Health</span>
+            <span class="status-card-val" style="color:var(--green);" id="fsHealthVal">OK</span>
+          </div>
+          <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+            <button class="btn btn-primary" id="formatFsBtn" style="flex:1;">Mount / Format FS</button>
+            <button class="btn btn-red" id="corruptFsBtn" style="flex:1;">Corrupt Sectors</button>
+          </div>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn" id="wipeDbBtn" style="flex:1;">Wipe / Clear DB</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Candles Table -->
+      <div class="tab-content" id="tab-candles-tab">
+        <div class="control-title">Active Candle Records in memory</div>
+        <div class="table-container">
+          <table class="db-table">
+            <thead>
+              <tr>
+                <th>Epoch (Bangkok)</th>
+                <th>Open</th>
+                <th>High</th>
+                <th>Low</th>
+                <th>Close</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody id="candlesTableBody">
+              <tr>
+                <td colspan="6" style="text-align:center; color:var(--text-muted); padding: 2rem;">No candle data loaded. System starting...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom: Serial Terminal Console -->
+    <div class="serial-section">
+      <div class="serial-header">
+        <div class="serial-title">
+          <span class="status-dot active"></span>
+          SERIAL MONITOR @ 115200 BAUD — /dev/cu.usbserial-110
+        </div>
+        <div class="serial-actions">
+          <input type="text" class="serial-search" id="serialSearchInput" placeholder="Filter logs...">
+          <button class="btn" id="clearTerminalBtn" style="padding: 0.2rem 0.5rem; font-size:0.7rem;">Clear</button>
+          <button class="btn" id="copyLogsBtn" style="padding: 0.2rem 0.5rem; font-size:0.7rem;">Copy</button>
+        </div>
+      </div>
+      <div class="serial-log-container" id="serialLogContainer"></div>
+    </div>
+
+  </div>
+
+  <!-- Simulation JavaScript -->
+  <script>
+    // ── CONSTANTS & BOARD CONFIG ──
+    const CANDLE_COUNT = 288;
+    const CANDLE_SECONDS = 300;
+    const NTP_VALID_EPOCH = 1700000000;
+    const BRIGHTNESS_STEPS = [230, 120, 40, 8];
+
+    // Colors mimicking LovyanGFX definitions in ui.cpp
+    const COL_BG       = "#000000";
+    const COL_TEXT     = "#FFFFFF";
+    const COL_TEXT2    = "#9C999C"; // 0x9CD3
+    const COL_GOOD     = "#20CC40"; // 0x2668
+    const COL_BAD      = "#FC1830"; // 0x78C6 or similar
+    const COL_GOOD_DIM = "#108E10"; // 0x1462
+    const COL_BAD_DIM  = "#902420"; // 0x9124
+    const COL_AMBER    = "#FCB400"; // 0xFDA0
+    const COL_BORDER   = "#397139"; // 0x39C7
+
+    // Screen Resolution Constants
+    const SCREEN_W      = 320;
+    const SCREEN_H      = 240;
+    const PAD_RIGHT     = 20;
+    const CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 300
+    const CHART_X0      = CONTENT_RIGHT - CANDLE_COUNT - 2;  // 10
+    const CHART_Y0      = 84;
+    const CHART_H       = 128;
+
+    // Helper for formatting large numbers with commas
+    function fmtCommas(v) {
+      const neg = v < 0;
+      if (neg) v = -v;
+      let s = Math.floor(v).toString();
+      let out = "";
+      let n = s.length;
+      let firstGroup = n % 3 || 3;
+      out += s.substring(0, firstGroup);
+      for (let i = firstGroup; i < n; i += 3) {
+        out += "," + s.substring(i, i + 3);
+      }
+      return neg ? "-" + out : out;
+    }
+
+    // Helper for formatting time (ICT Bangkok GMT+7 timezone)
+    function getICTDateTime(epochSec) {
+      // Bangkok is UTC+7
+      let date = new Date((epochSec + 7 * 3600) * 1000);
+      const wdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const mons = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      
+      const pad = (n) => String(n).padStart(2, '0');
+      return {
+        hour: pad(date.getUTCHours()),
+        minute: pad(date.getUTCMinutes()),
+        second: pad(date.getUTCSeconds()),
+        wday: wdays[date.getUTCDay()],
+        mday: date.getUTCDate(),
+        mon: mons[date.getUTCMonth()]
+      };
+    }
+
+    // ── MOCK LOVYANGFX CLASS ──
+    class LovyanGFX {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.ctx.imageSmoothingEnabled = false;
+        this.cursorX = 0;
+        this.cursorY = 0;
+        this.textSize = 1;
+        this.textColor = COL_TEXT;
+      }
+
+      fillScreen(color) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+      }
+
+      drawRect(x, y, w, h, color) {
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      }
+
+      fillRect(x, y, w, h, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x, y, w, h);
+      }
+
+      fillCircle(x, y, r, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, r, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      drawWifi(x, y, color) {
+        this.ctx.strokeStyle = color;
+        this.ctx.fillStyle = color;
+        this.ctx.lineWidth = 1.2;
+        this.ctx.lineCap = "round";
+
+        // Dot
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Arc 1
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 5, -Math.PI * 0.75, -Math.PI * 0.25);
+        this.ctx.stroke();
+
+        // Arc 2
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 9, -Math.PI * 0.75, -Math.PI * 0.25);
+        this.ctx.stroke();
+
+        // Arc 3
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 13, -Math.PI * 0.75, -Math.PI * 0.25);
+        this.ctx.stroke();
+      }
+
+      drawFastVLine(x, y, h, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x, y, 1, h);
+      }
+
+      setTextSize(size) {
+        this.textSize = size;
+      }
+
+      setTextColor(color) {
+        this.textColor = color;
+      }
+
+      setCursor(x, y) {
+        this.cursorX = x;
+        this.cursorY = y;
+      }
+
+      textWidth(text) {
+        // LovyanGFX Font0 is roughly 6px wide per character per unit size
+        return text.length * 6 * this.textSize;
+      }
+
+      print(text) {
+        this.ctx.fillStyle = this.textColor;
+        // Map size to pixel sizes: size 1 = 8px, size 2 = 16px, size 4 = 32px
+        let pixelSize = 8 * this.textSize;
+
+        this.ctx.font = `${pixelSize}px "Press Start 2P", monospace`;
+        this.ctx.textBaseline = "top";
+        
+        const charWidth = 6 * this.textSize;
+        for (let i = 0; i < text.length; i++) {
+          this.ctx.save();
+          this.ctx.translate(this.cursorX, this.cursorY);
+          // Press Start 2P is a square 8x8 font. To map to LovyanGFX's 6x8 GLCD layout, 
+          // we scale each character horizontally by 0.75 (6 / 8).
+          this.ctx.scale(0.75, 1.0);
+          this.ctx.fillText(text[i], 0, 0);
+          this.ctx.restore();
+          this.cursorX += charWidth;
+        }
+      }
+    }
+
+    // ── SIMULATOR STATE ENGINE ──
+    class ESP32Simulator {
+      constructor() {
+        this.canvas = document.getElementById("screenCanvas");
+        this.gfx = new LovyanGFX(this.canvas);
+        
+        // System variables
+        this.bootTime = Date.now();
+        this.simTimeMultiplier = 1;
+        // Start simulated time relative to now (matching ICT)
+        this.simulatedTimeEpoch = Math.floor(Date.now() / 1000);
+        this.realTimeLastTick = Date.now();
+        
+        this.powerOn = true;
+        this.wifiConnected = false;
+        this.wifiStatus = "WL_DISCONNECTED";
+        this.ipAddress = "";
+        this.freeHeap = 265432;
+        this.apiHits = 0;
+        this.isFsHealthy = true;
+        
+        // Price/Feed State
+        this.lastPrice = NaN;
+        this.changePct = NaN;
+        this.priceOkMs = 0; // Simulated millis() timestamp of last price fetch success
+        this.lastLiveFetchTime = 0;
+        
+        // UI Brightness
+        this.brightnessIdx = 0;
+        
+        // Database / RAM Ring Buffer
+        this.candleRing = new Array(CANDLE_COUNT).fill(null).map(() => ({ openEpoch: 0, o: 0, h: 0, l: 0, c: 0 }));
+        this.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
+        
+        // Control Switches
+        this.wifiSwitch = document.getElementById("wifiSwitch");
+        this.apiSwitch = document.getElementById("apiSwitch");
+        this.dataProviderSelect = document.getElementById("dataProviderSelect");
+        this.mockTrendSelect = document.getElementById("mockTrendSelect");
+        this.manualPriceSlider = document.getElementById("manualPriceSlider");
+        this.timeSpeedSlider = document.getElementById("timeSpeedSlider");
+        
+        // Jobs list (mimicking btc_ticker.ino)
+        this.jobs = [
+          { name: "price", interval: 1000, next: 0, backoff: 1000, run: () => this.jobPrice() },
+          { name: "ntp", interval: 6 * 3600 * 1000, next: 0, backoff: 1000, run: () => this.jobNtp() },
+        ];
+        
+        // Backfill scheduling
+        this.backfillDoneOnce = false;
+        this.backfillNextMs = 0;
+        this.backfillBackoff = 1000;
+        
+        // Wifi connection timer helper
+        this.wifiConnectingSince = 0;
+        this.wifiDownSinceMs = 0;
+        this.wifiLastRetryMs = 0;
+        
+        // UI logs list
+        this.terminalLogs = [];
+      }
+
+      // Millis mimicking Arduino's millis() (counts simulated uptime)
+      getSimMillis() {
+        return Math.floor((Date.now() - this.bootTime) * this.simTimeMultiplier);
+      }
+
+
+
+      log(level, module, text) {
+        const uptime = (this.getSimMillis() / 1000).toFixed(3);
+        const logLine = {
+          time: uptime,
+          level: level,
+          module: module,
+          text: text
+        };
+        
+        this.terminalLogs.push(logLine);
+        if (this.terminalLogs.length > 300) {
+          this.terminalLogs.shift();
+        }
+        
+        this.appendLogToUI(logLine);
+      }
+
+      appendLogToUI(logLine) {
+        const container = document.getElementById("serialLogContainer");
+        const filter = document.getElementById("serialSearchInput").value.toLowerCase();
+        
+        const lineText = `[${logLine.time}s] [${logLine.module}] ${logLine.text}`;
+        if (filter && !lineText.toLowerCase().includes(filter)) {
+          return;
+        }
+
+        const div = document.createElement("div");
+        div.className = "log-line";
+        div.innerHTML = `
+          <span class="log-time">[${logLine.time}s]</span> 
+          <span class="log-module">[${logLine.module}]</span> 
+          <span class="log-level-${logLine.level.toLowerCase()}">${logLine.text}</span>
+        `;
+        container.appendChild(div);
+        
+        // Limit DOM items
+        while (container.childNodes.length > 300) {
+          container.removeChild(container.firstChild);
+        }
+        
+        // Autoscroll
+        container.scrollTop = container.scrollHeight;
+      }
+
+      refreshTerminal() {
+        const container = document.getElementById("serialLogContainer");
+        container.innerHTML = "";
+        this.terminalLogs.forEach(logLine => this.appendLogToUI(logLine));
+      }
+
+      // Hard Reset / Startup sequence
+      reset() {
+        this.bootTime = Date.now();
+        this.simulatedTimeEpoch = Math.floor(Date.now() / 1000);
+        this.realTimeLastTick = Date.now();
+        this.wifiConnected = false;
+        this.wifiStatus = "WL_DISCONNECTED";
+        this.ipAddress = "";
+        this.freeHeap = 265432;
+        this.apiHits = 0;
+        
+        this.lastPrice = NaN;
+        this.changePct = NaN;
+        this.priceOkMs = 0;
+        this.backfillDoneOnce = false;
+        this.backfillNextMs = 0;
+        this.backfillBackoff = 1000;
+        this.wifiConnectingSince = 0;
+        this.wifiDownSinceMs = 0;
+        this.wifiLastRetryMs = 0;
+        
+        this.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
+        this.jobs.forEach(j => { j.next = 0; j.backoff = 1000; });
+        
+        document.getElementById("serialLogContainer").innerHTML = "";
+        this.terminalLogs = [];
+        
+        this.log("INFO", "SYSTEM", "Powering on Cheap Yellow Display ESP32-D0WD-V3...");
+        this.log("INFO", "SYSTEM", "Chip Revision: 3.1. RAM: 327KB DRAM, 4MB External Flash.");
+        this.log("INFO", "LGFX", "Initializing ILI9341 display module (SPI Host: VSPI)...");
+        this.log("INFO", "LGFX", "Sprite allocation requested: 16-bit double buffer.");
+        this.log("INFO", "LGFX", "16-bit Frame buffer allocated successfully (150KB contiguous).");
+        this.log("INFO", "LGFX", "Touch controller XPT2046 initialized on SPI bus.");
+        
+        this.loadBacklightPreference();
+        
+        // Mount FS
+        this.mountLittleFS();
+        
+        this.render();
+      }
+
+      loadBacklightPreference() {
+        const savedIdx = localStorage.getItem("btc_cyd_brightness_idx");
+        if (savedIdx !== null) {
+          this.brightnessIdx = parseInt(savedIdx, 10);
+        } else {
+          this.brightnessIdx = 0;
+        }
+        this.applyBrightness();
+        this.log("INFO", "TOUCH", `Restored screen brightness index ${this.brightnessIdx} (PWM: ${BRIGHTNESS_STEPS[this.brightnessIdx]})`);
+      }
+
+      applyBrightness() {
+        const val = BRIGHTNESS_STEPS[this.brightnessIdx];
+        const canvas = document.getElementById("screenCanvas");
+        // Fade opacity/brightness filter to simulate backlight dimming
+        if (this.brightnessIdx === 0) {
+          canvas.style.filter = "brightness(100%)";
+        } else if (this.brightnessIdx === 1) {
+          canvas.style.filter = "brightness(60%)";
+        } else if (this.brightnessIdx === 2) {
+          canvas.style.filter = "brightness(30%)";
+        } else {
+          canvas.style.filter = "brightness(12%)";
+        }
+        document.getElementById("backlightVal").innerText = `${this.brightnessIdx} (PWM ${val})`;
+      }
+
+      cycleBrightness() {
+        this.brightnessIdx = (this.brightnessIdx + 1) % 4;
+        this.applyBrightness();
+        localStorage.setItem("btc_cyd_brightness_idx", this.brightnessIdx);
+        this.log("INFO", "TOUCH", `Screen touched: Cycling brightness to index ${this.brightnessIdx} (PWM ${BRIGHTNESS_STEPS[this.brightnessIdx]})`);
+      }
+
+      mountLittleFS() {
+        this.log("INFO", "LFS", "Mounting LittleFS filesystem... OK");
+        
+        if (!this.isFsHealthy) {
+          this.log("ERROR", "LFS", "LittleFS mount failed (corrupted sectors). Reformatting...");
+          this.wipeDb();
+          this.isFsHealthy = true;
+          document.getElementById("fsHealthVal").innerText = "OK";
+          document.getElementById("fsHealthVal").style.color = "var(--green)";
+          this.log("INFO", "LFS", "Reformat OK. Mounted blank filesystem.");
+          return;
+        }
+
+        const savedData = localStorage.getItem("btc_cyd_candles");
+        if (savedData) {
+          try {
+            const records = JSON.parse(savedData);
+            let count = 0;
+            records.forEach((rec, idx) => {
+              if (rec && rec.openEpoch > 0) {
+                this.candleRing[idx] = rec;
+                count++;
+              }
+            });
+            this.log("INFO", "LFS", `Loaded ${count} candles from /candles.bin`);
+          } catch(e) {
+            this.log("ERROR", "LFS", "Error reading /candles.bin. Recreating zero-filled.");
+            this.wipeDb();
+          }
+        } else {
+          this.log("WARNING", "LFS", "/candles.bin not found. Created empty database.");
+          this.wipeDb();
+        }
+        this.updateInspectorUI();
+      }
+
+      wipeDb() {
+        this.candleRing = new Array(CANDLE_COUNT).fill(null).map(() => ({ openEpoch: 0, o: 0, h: 0, l: 0, c: 0 }));
+        this.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
+        localStorage.setItem("btc_cyd_candles", JSON.stringify(this.candleRing));
+        this.updateInspectorUI();
+      }
+
+      saveCandleToFS(rec) {
+        if (!this.isFsHealthy) {
+          this.log("ERROR", "LFS", "Disk write error! LittleFS sectors corrupted.");
+          return;
+        }
+        const slot = Math.floor((rec.openEpoch / CANDLE_SECONDS) % CANDLE_COUNT);
+        this.candleRing[slot] = rec;
+        localStorage.setItem("btc_cyd_candles", JSON.stringify(this.candleRing));
+        this.updateInspectorUI();
+      }
+
+      // Simulation ticks
+      tick() {
+        if (!this.powerOn) return;
+
+        const now = Date.now();
+        const realElapsedMs = now - this.realTimeLastTick;
+        this.realTimeLastTick = now;
+
+        // Multiply elapsed time for clock acceleration
+        const simElapsedSec = (realElapsedMs / 1000) * this.simTimeMultiplier;
+        this.simulatedTimeEpoch += simElapsedSec;
+
+        // Handle WiFi connection flow simulation
+        this.wifiSupervisor(realElapsedMs);
+
+        // Run jobs on their simulated intervals
+        this.serviceJobs();
+
+        // Run backfill logic
+        this.maybeBackfill();
+
+        // Feed price to candles engine
+        this.candlesTick(this.lastPrice);
+
+        // Update inspector elements periodically (e.g. heap size fluctuations)
+        if (Math.random() < 0.05) {
+          this.freeHeap = 260000 + Math.floor(Math.random() * 10000);
+          this.updateInspectorUI();
+        }
+
+        // Keep LEDs matching simulation state
+        this.updateHardwareLed();
+
+        // Update UI panels
+        document.getElementById("uptimeVal").innerText = Math.floor((Date.now() - this.bootTime) / 1000) + "s (Real) / " + Math.floor(this.getSimMillis() / 1000) + "s (Sim)";
+        document.getElementById("heapVal").innerText = Math.floor(this.freeHeap / 1024) + " KB";
+        
+        // Render screen double buffer
+        this.render();
+      }
+
+      updateHardwareLed() {
+        const led = document.getElementById("boardLed");
+        led.className = "board-led";
+        if (!this.wifiConnected) {
+          // Blink red if connecting or solid red if down
+          if (this.wifiStatus === "WL_CONNECTING") {
+            const flash = Math.floor(Date.now() / 250) % 2 === 0;
+            led.classList.add(flash ? "red" : "off");
+          } else {
+            led.classList.add("red");
+          }
+        } else {
+          // Wifi connected
+          if (Date.now() - this.lastLiveFetchTime < 150) {
+            led.classList.add("blue"); // Flash blue on network packet fetch
+          } else {
+            led.classList.add("green");
+          }
+        }
+      }
+
+      // WiFi Supervisor matching ESP32 firmware
+      wifiSupervisor(realElapsedMs) {
+        const nowMs = this.getSimMillis();
+        const wifiDesired = this.wifiSwitch.checked;
+
+        if (wifiDesired) {
+          if (!this.wifiConnected) {
+            if (this.wifiStatus !== "WL_CONNECTING") {
+              this.wifiStatus = "WL_CONNECTING";
+              this.wifiConnectingSince = nowMs;
+              this.wifiLastRetryMs = nowMs;
+              this.log("INFO", "WIFI", "Connecting to WiFi SSID: BUY_BITCOIN...");
+            } else {
+              // Wait 2 simulated seconds to connect
+              if (nowMs - this.wifiConnectingSince > 2000) {
+                this.wifiConnected = true;
+                this.wifiStatus = "WL_CONNECTED";
+                this.ipAddress = "192.168.1." + (100 + Math.floor(Math.random() * 100));
+                this.log("INFO", "WIFI", `WiFi Connected! Local IP: ${this.ipAddress}`);
+                this.updateInspectorUI();
+              }
+            }
+          }
+          this.wifiDownSinceMs = 0;
+        } else {
+          // Disconnected via switch
+          if (this.wifiConnected) {
+            this.wifiConnected = false;
+            this.wifiStatus = "WL_DISCONNECTED";
+            this.ipAddress = "";
+            this.log("WARNING", "WIFI", "WiFi Connection lost (WL_CONNECTION_LOST).");
+            this.updateInspectorUI();
+          }
+          
+          if (this.wifiDownSinceMs === 0) {
+            this.wifiDownSinceMs = nowMs;
+          }
+          
+          const downDuration = nowMs - this.wifiDownSinceMs;
+          if (downDuration > 10 * 60 * 1000) {
+            this.log("ERROR", "SYSTEM", "WiFi down > 10 minutes. Triggering Watchdog Reboot...");
+            this.reset();
+          } else if (downDuration > 60000 && nowMs - this.wifiLastRetryMs > 60000) {
+            this.wifiLastRetryMs = nowMs;
+            this.log("INFO", "WIFI", "WiFi down > 60s, calling WiFi.begin() supervisor reconnect...");
+          }
+        }
+
+        // Indicators
+        const wifiInd = document.getElementById("wifiIndicator");
+        if (this.wifiConnected) {
+          wifiInd.className = "status-dot active";
+        } else {
+          wifiInd.className = "status-dot error";
+        }
+      }
+
+      // Schedule runner
+      serviceJobs() {
+        if (!this.wifiConnected) return;
+
+        const nowMs = this.getSimMillis();
+        let rrStart = 0;
+        const N = this.jobs.length;
+
+        for (let i = 0; i < N; i++) {
+          let idx = (rrStart + i) % N;
+          let j = this.jobs[idx];
+          
+          if (nowMs < j.next) continue;
+
+          // Run the job
+          const ok = j.run();
+          const doneMs = this.getSimMillis();
+
+          if (ok) {
+            j.backoff = 1000;
+            j.next = doneMs + j.interval;
+          } else {
+            this.log("WARNING", "SYSTEM", `[${j.name}] job failed, retrying in ${j.backoff / 1000}s`);
+            j.next = doneMs + j.backoff;
+            j.backoff = Math.min(60000, j.backoff * 2);
+          }
+          break; // run at most one job per loop pass
+        }
+      }
+
+      jobNtp() {
+        this.log("INFO", "NTP", "Synchronizing time via pool.ntp.org (ICT-7 timezone)...");
+        document.getElementById("ntpIndicator").className = "status-dot active";
+        this.log("INFO", "NTP", "NTP clock sync successful. Time offset locked.");
+        return true;
+      }
+
+      jobPrice() {
+        if (!this.apiSwitch.checked) {
+          return false; // Fail request
+        }
+        this.fetchPrice();
+        return true;
+      }
+
+      // Fetch klines backfill
+      maybeBackfill() {
+        if (!this.wifiConnected) return;
+        if (this.simulatedTimeEpoch < NTP_VALID_EPOCH) return;
+
+        let gapCount = 0;
+        let needGap = this.candlesNeedGapRepair();
+        
+        if (this.backfillDoneOnce && !needGap) return;
+
+        const nowMs = this.getSimMillis();
+        if (nowMs < this.backfillNextMs) return;
+
+        const limit = this.backfillDoneOnce ? Math.min(CANDLE_COUNT, this.getGapCount() + 1) : CANDLE_COUNT;
+        
+        this.log("INFO", "NET", `Executing klines backfill (limit=${limit}). Releasing Price socket...`);
+        this.apiHits++;
+        document.getElementById("apiHitsVal").innerText = this.apiHits;
+
+        this.fetchKlines(limit).then(klines => {
+          if (klines.length < 2) {
+            this.log("WARNING", "NET", `Backfill failed, retry in ${this.backfillBackoff/1000}s`);
+            this.backfillNextMs = this.getSimMillis() + this.backfillBackoff;
+            this.backfillBackoff = Math.min(60000, this.backfillBackoff * 2);
+            document.getElementById("apiIndicator").className = "status-dot error";
+          } else {
+            for (let i = 0; i < klines.length - 1; i++) {
+              this.candlesSetClosed(klines[i]);
+            }
+            this.candlesSeedForming(klines[klines.length - 1]);
+            
+            this.log("INFO", "NET", `Backfill loaded: ${klines.length} candles (limit=${limit})`);
+            this.backfillDoneOnce = true;
+            this.backfillBackoff = 1000;
+            this.backfillNextMs = this.getSimMillis();
+            document.getElementById("apiIndicator").className = "status-dot active";
+            
+            // Build the candle table
+            this.rebuildCandleTableUI();
+          }
+        });
+      }
+
+      candlesNeedGapRepair() {
+        if (!this.backfillDoneOnce) return true;
+        return this.getGapCount() > 1;
+      }
+
+      getGapCount() {
+        const nowBucket = Math.floor(this.simulatedTimeEpoch / CANDLE_SECONDS);
+        let newestClosed = 0;
+        this.candleRing.forEach(r => {
+          if (r.openEpoch > newestClosed) newestClosed = r.openEpoch;
+        });
+        if (newestClosed === 0) return CANDLE_COUNT;
+        const newestBucket = Math.floor(newestClosed / CANDLE_SECONDS);
+        return Math.max(0, nowBucket - newestBucket - 1);
+      }
+
+      candlesSetClosed(rec) {
+        const slot = Math.floor((rec.openEpoch / CANDLE_SECONDS) % CANDLE_COUNT);
+        this.candleRing[slot] = rec;
+        this.saveCandleToFS(rec);
+      }
+
+      candlesSeedForming(rec) {
+        this.formingCandle = { ...rec };
+        this.updateInspectorUI();
+      }
+
+      // Price feed fetcher (Binance API or Mock)
+      fetchPrice() {
+        this.lastLiveFetchTime = Date.now();
+        this.apiHits++;
+        document.getElementById("apiHitsVal").innerText = this.apiHits;
+
+        if (this.dataProviderSelect.value === "live" && this.apiSwitch.checked) {
+          // Fetch live price from Binance API (CORS enabled)
+          fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT")
+            .then(res => {
+              if (!res.ok) throw new Error("HTTP code " + res.status);
+              return res.json();
+            })
+            .then(data => {
+              this.lastPrice = parseFloat(data.lastPrice);
+              this.changePct = parseFloat(data.priceChangePercent);
+              this.priceOkMs = this.getSimMillis();
+              
+              document.getElementById("apiIndicator").className = "status-dot active";
+            })
+            .catch(err => {
+              this.log("ERROR", "NET", "Binance HTTP price fetch failed: " + err.message);
+              document.getElementById("apiIndicator").className = "status-dot error";
+            });
+        } else {
+          // Simulated Local Trend Generator
+          const sliderVal = parseFloat(this.manualPriceSlider.value);
+          const trend = this.mockTrendSelect.value;
+          
+          let currentPrice = isNaN(this.lastPrice) ? sliderVal : this.lastPrice;
+          
+          // Generate trend variations
+          let change = (Math.random() - 0.5) * 50; // Random fluctuation +/- 25 USD
+          if (trend === "bull") {
+            change += 15; // Positive drift
+          } else if (trend === "bear") {
+            change -= 15; // Negative drift
+          } else if (trend === "flat") {
+            // Revert back towards selected slider price
+            change += (sliderVal - currentPrice) * 0.05;
+          }
+          
+          this.lastPrice = currentPrice + change;
+          this.manualPriceSlider.value = Math.floor(this.lastPrice);
+          document.getElementById("manualPriceVal").innerText = "$" + fmtCommas(this.lastPrice);
+          
+          if (isNaN(this.changePct)) this.changePct = 0.0;
+          this.changePct += (change / this.lastPrice) * 100;
+          
+          this.priceOkMs = this.getSimMillis();
+          document.getElementById("apiIndicator").className = "status-dot active";
+        }
+      }
+
+      // Fetch klines backfill helper
+      async fetchKlines(limit) {
+        if (this.dataProviderSelect.value === "live" && this.apiSwitch.checked) {
+          try {
+            const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=${limit}`);
+            if (!res.ok) throw new Error("HTTP code " + res.status);
+            const data = await res.json();
+            
+            return data.map(item => ({
+              openEpoch: Math.floor(item[0] / 1000),
+              o: parseFloat(item[1]),
+              h: parseFloat(item[2]),
+              l: parseFloat(item[3]),
+              c: parseFloat(item[4])
+            }));
+          } catch(err) {
+            this.log("ERROR", "NET", "Binance HTTP klines backfill failed: " + err.message);
+            return [];
+          }
+        } else {
+          // Generate realistic mock backfill
+          let endPrice = isNaN(this.lastPrice) ? parseFloat(this.manualPriceSlider.value) : this.lastPrice;
+          let currentEpoch = Math.floor(this.simulatedTimeEpoch / CANDLE_SECONDS) * CANDLE_SECONDS;
+          let klines = [];
+          
+          for (let i = 0; i < limit; i++) {
+            let offset = (limit - 1 - i) * CANDLE_SECONDS;
+            let epoch = currentEpoch - offset;
+            
+            // Random walk backwards to construct O/H/L/C
+            let c = endPrice;
+            let change = (Math.random() - 0.5) * 200;
+            let o = c - change;
+            let h = Math.max(o, c) + Math.random() * 100;
+            let l = Math.min(o, c) - Math.random() * 100;
+            
+            klines.push({ openEpoch: epoch, o, h, l, c });
+            endPrice = o; // walk backward
+          }
+          return klines;
+        }
+      }
+
+      // Candle assembly mechanism
+      candlesTick(price) {
+        if (isNaN(price)) return;
+        if (this.simulatedTimeEpoch < NTP_VALID_EPOCH) return;
+
+        const currentBucket = Math.floor(this.simulatedTimeEpoch / CANDLE_SECONDS);
+        const formingBucket = Math.floor(this.formingCandle.openEpoch / CANDLE_SECONDS);
+
+        if (this.formingCandle.openEpoch === 0) {
+          // Open new candle
+          this.formingCandle.openEpoch = currentBucket * CANDLE_SECONDS;
+          this.formingCandle.o = price;
+          this.formingCandle.h = price;
+          this.formingCandle.l = price;
+          this.formingCandle.c = price;
+          this.log("INFO", "CANDLE", `Opened forming candle bucket ${currentBucket} at price $${price.toFixed(2)}`);
+          this.updateInspectorUI();
+        } else if (currentBucket === formingBucket) {
+          // Tick updates High/Low/Close of forming candle
+          if (price > this.formingCandle.h) this.formingCandle.h = price;
+          if (price < this.formingCandle.l) this.formingCandle.l = price;
+          this.formingCandle.c = price;
+          this.updateInspectorUI();
+        } else {
+          // Simulated 5-minute boundary close!
+          const closedCandle = { ...this.formingCandle };
+          this.candlesSetClosed(closedCandle);
+          
+          const dt = getICTDateTime(closedCandle.openEpoch);
+          this.log("INFO", "CANDLE", `Closed candle at [${dt.hour}:${dt.minute}]: O=${closedCandle.o.toFixed(0)} H=${closedCandle.h.toFixed(0)} L=${closedCandle.l.toFixed(0)} C=${closedCandle.c.toFixed(0)}`);
+          
+          // Open next candle
+          this.formingCandle.openEpoch = currentBucket * CANDLE_SECONDS;
+          this.formingCandle.o = price;
+          this.formingCandle.h = price;
+          this.formingCandle.l = price;
+          this.formingCandle.c = price;
+          
+          this.updateInspectorUI();
+          this.rebuildCandleTableUI();
+        }
+      }
+
+      // ── LOVYANGFX FRAME RENDERER ──
+      render() {
+        const g = this.gfx;
+        
+        // 1. Clear Screen
+        g.fillScreen(COL_BG);
+        
+        // 2. Draw Header
+        const dt = getICTDateTime(this.simulatedTimeEpoch);
+        g.setTextSize(2);
+        g.setCursor(4, 4);
+        
+        // Check if NTP is sync'd yet
+        const haveTime = this.simulatedTimeEpoch > NTP_VALID_EPOCH;
+        if (haveTime) {
+          g.setTextColor(COL_TEXT);
+          g.print(`${dt.hour}:${dt.minute}`);
+          g.setTextSize(1);
+          g.setTextColor(COL_TEXT2);
+          g.setCursor(g.cursorX, 10);
+          g.print(`:${dt.second}`);
+          
+          g.setTextColor(COL_TEXT2);
+          g.setTextSize(1);
+          g.setCursor(96, 10);
+          g.print(`${dt.wday} ${dt.mday} ${dt.mon}`);
+        } else {
+          g.setTextColor(COL_TEXT2);
+          g.print("--:--:--");
+        }
+
+        // Draw WiFi indicator (rightmost wifi arcs, centered at x=286, y=20)
+        g.drawWifi(286, 20, this.wifiConnected ? COL_GOOD : COL_BAD);
+        
+        // Draw Freshness indicator (shifted left to x=262 to avoid overlapping wifi arcs)
+        let freshColor = COL_BAD;
+        if (this.priceOkMs !== 0) {
+          const age = this.getSimMillis() - this.priceOkMs;
+          if (age <= 5000) freshColor = COL_GOOD;
+          else if (age <= 30000) freshColor = COL_AMBER;
+        }
+        g.fillCircle(262, 12, 4, freshColor);
+
+        // 3. Draw Price Row (Inline, right-aligned to CONTENT_RIGHT, baseline aligned)
+        let priceStr = "$--";
+        if (!isNaN(this.lastPrice)) {
+          priceStr = "$" + fmtCommas(this.lastPrice + 0.5);
+        }
+        
+        let changeStr = "--";
+        if (!isNaN(this.changePct)) {
+          const sign = this.changePct >= 0 ? "+" : "";
+          changeStr = `${sign}${this.changePct.toFixed(2)}%`;
+        }
+
+        // Width calculations
+        g.setTextSize(4);
+        const wPrice = g.textWidth(priceStr);
+        g.setTextSize(2);
+        const wChange = g.textWidth(changeStr);
+        
+        const gap = 8;
+        const totalW = wPrice + gap + wChange;
+        
+        // Start X position to right-align the combined block
+        let startX = CONTENT_RIGHT - totalW;
+        if (startX < 4) startX = 4;
+        
+        // Render Price (size 4, y=34)
+        g.setTextSize(4);
+        g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT2 : COL_TEXT);
+        g.setCursor(startX, 34);
+        g.print(priceStr);
+        
+        // Render Percentage Change (size 2, inline to the right, y=50 for baseline alignment)
+        g.setTextSize(2);
+        g.setTextColor(isNaN(this.changePct) ? COL_TEXT2 : (this.changePct >= 0 ? COL_GOOD : COL_BAD));
+        g.setCursor(startX + wPrice + gap, 50);
+        g.print(changeStr);
+
+        // 4. Draw Chart Border
+        g.drawRect(CHART_X0 - 2, CHART_Y0 - 2, CANDLE_COUNT + 4, CHART_H + 4, COL_BORDER);
+
+        // Resolve visible candles
+        const visibleBuf = new Array(CANDLE_COUNT);
+        const validBuf = new Array(CANDLE_COUNT).fill(false);
+        const haveBucket = this.formingCandle.openEpoch !== 0;
+        const currentBucket = haveBucket ? Math.floor(this.formingCandle.openEpoch / CANDLE_SECONDS) : 0;
+
+        for (let i = 0; i < CANDLE_COUNT; i++) {
+          if (haveBucket) {
+            const bucketsAgo = (CANDLE_COUNT - 1) - i;
+            if (bucketsAgo === 0) {
+              visibleBuf[i] = this.formingCandle;
+              validBuf[i] = true;
+            } else {
+              const targetBucket = currentBucket - bucketsAgo;
+              const slot = Math.floor((targetBucket * CANDLE_SECONDS / CANDLE_SECONDS) % CANDLE_COUNT);
+              const rec = this.candleRing[slot];
+              if (rec && rec.openEpoch === targetBucket * CANDLE_SECONDS) {
+                visibleBuf[i] = rec;
+                validBuf[i] = true;
+              }
+            }
+          } else {
+            // Fallback load raw slots on boot
+            const rec = this.candleRing[i];
+            if (rec && rec.openEpoch !== 0) {
+              visibleBuf[i] = rec;
+              validBuf[i] = true;
+            }
+          }
+        }
+
+        // Determine price boundaries
+        let rangeMin = Infinity;
+        let rangeMax = -Infinity;
+        let haveRange = false;
+
+        for (let i = 0; i < CANDLE_COUNT; i++) {
+          if (!validBuf[i]) continue;
+          if (visibleBuf[i].l < rangeMin) rangeMin = visibleBuf[i].l;
+          if (visibleBuf[i].h > rangeMax) rangeMax = visibleBuf[i].h;
+          haveRange = true;
+        }
+
+        if (haveRange) {
+          let span = rangeMax - rangeMin;
+          if (span < 1.0) span = 1.0;
+
+          // Plot columns
+          for (let i = 0; i < CANDLE_COUNT; i++) {
+            if (!validBuf[i]) continue;
+            const r = visibleBuf[i];
+            const cx = CHART_X0 + i;
+            const bull = r.c >= r.o;
+
+            const priceToY = (p) => {
+              const f = (p - rangeMin) / span;
+              let y = CHART_Y0 + CHART_H - 1 - Math.floor(f * (CHART_H - 1));
+              return Math.max(CHART_Y0, Math.min(CHART_Y0 + CHART_H - 1, y));
+            };
+
+            let yH = priceToY(r.h);
+            let yL = priceToY(r.l);
+            if (yL < yH) { const temp = yH; yH = yL; yL = temp; }
+            g.drawFastVLine(cx, yH, yL - yH + 1, bull ? COL_GOOD_DIM : COL_BAD_DIM);
+
+            let yO = priceToY(r.o);
+            let yC = priceToY(r.c);
+            let yTop = Math.min(yO, yC);
+            let bodyLen = Math.max(yO, yC) - yTop + 1;
+            g.drawFastVLine(cx, yTop, bodyLen, bull ? COL_GOOD : COL_BAD);
+          }
+
+          // Labels inside Chart
+          g.setTextColor(COL_TEXT2);
+          g.setTextSize(1);
+          g.setCursor(CHART_X0 + 2, CHART_Y0 + 1);
+          g.print(fmtCommas(rangeMax + 0.5));
+          g.setCursor(CHART_X0 + 2, CHART_Y0 + CHART_H - 9);
+          g.print(fmtCommas(rangeMin + 0.5));
+        }
+
+        // 5. Draw Footer
+        g.setTextColor(COL_TEXT2);
+        g.setTextSize(1);
+        g.setCursor(4, 222);
+
+        if (this.formingCandle.openEpoch !== 0) {
+          const age = this.simulatedTimeEpoch - this.formingCandle.openEpoch;
+          g.print(`candle ${Math.floor(age)}s`);
+        } else {
+          g.print("candle --");
+        }
+
+        g.setCursor(120, 222);
+        g.print(`heap ${Math.floor(this.freeHeap / 1024)}K`);
+
+        g.setCursor(205, 222);
+        g.print(this.ipAddress || "no ip");
+      }
+
+      // ── MOCK CONTROLS & TAB INTERACTIVITY ──
+      updateInspectorUI() {
+        document.getElementById("ipAddressVal").innerText = this.ipAddress || "no ip";
+        document.getElementById("wifiStatusVal").innerText = this.wifiStatus;
+        
+        if (this.formingCandle.openEpoch > 0) {
+          document.getElementById("formingEpochVal").innerText = this.formingCandle.openEpoch;
+          const age = Math.floor(this.simulatedTimeEpoch - this.formingCandle.openEpoch);
+          document.getElementById("formingAgeVal").innerText = `${age}s`;
+          document.getElementById("formingOhlcVal").innerText = 
+            `O:${this.formingCandle.o.toFixed(0)} H:${this.formingCandle.h.toFixed(0)} L:${this.formingCandle.l.toFixed(0)} C:${this.formingCandle.c.toFixed(0)}`;
+        } else {
+          document.getElementById("formingEpochVal").innerText = "--";
+          document.getElementById("formingAgeVal").innerText = "--";
+          document.getElementById("formingOhlcVal").innerText = "--";
+        }
+        
+        let actualRecords = this.candleRing.filter(r => r.openEpoch > 0).length;
+        document.getElementById("totalRecordsVal").innerText = `${actualRecords} / 288`;
+        document.getElementById("fsSizeVal").innerText = `${actualRecords * 20} bytes`;
+      }
+
+      rebuildCandleTableUI() {
+        const tbody = document.getElementById("candlesTableBody");
+        tbody.innerHTML = "";
+        
+        const activeRecords = this.candleRing
+          .filter(r => r.openEpoch > 0)
+          .sort((a, b) => b.openEpoch - a.openEpoch); // newest first
+          
+        if (activeRecords.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding: 2rem;">No candle records saved in database.</td></tr>`;
+          return;
+        }
+
+        activeRecords.forEach(r => {
+          const dt = getICTDateTime(r.openEpoch);
+          const chg = ((r.c - r.o) / r.o) * 100;
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${dt.mon} ${dt.mday} ${dt.hour}:${dt.minute}</td>
+            <td>$${fmtCommas(r.o)}</td>
+            <td>$${fmtCommas(r.h)}</td>
+            <td>$${fmtCommas(r.l)}</td>
+            <td style="font-weight:600;">$${fmtCommas(r.c)}</td>
+            <td style="color:${chg >= 0 ? 'var(--green)' : 'var(--red)'}; font-weight:600;">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    // ── MAIN LOOP & INITIALIZATION ──
+    window.addEventListener("DOMContentLoaded", () => {
+      const sim = new ESP32Simulator();
+      
+      // Initialize Board
+      sim.reset();
+
+      // UI Tab Selection Logic
+      const tabs = document.querySelectorAll(".tab-btn");
+      tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          tabs.forEach(t => t.classList.remove("active"));
+          document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+          
+          tab.classList.add("active");
+          const activeTabContent = document.getElementById(`tab-${tab.dataset.tab}`);
+          activeTabContent.classList.add("active");
+          
+          if (tab.dataset.tab === "candles-tab") {
+            sim.rebuildCandleTableUI();
+          }
+        });
+      });
+
+      // Price Provider Selection Toggle
+      const dataSelect = document.getElementById("dataProviderSelect");
+      const mockDiv = document.getElementById("mockControls");
+      dataSelect.addEventListener("change", () => {
+        mockDiv.style.display = dataSelect.value === "mock" ? "block" : "none";
+        sim.log("INFO", "NET", `Switched pricing data provider to: ${dataSelect.value}`);
+      });
+
+      // Simulation Speed slider
+      const speedSlider = document.getElementById("timeSpeedSlider");
+      const speedVal = document.getElementById("timeSpeedVal");
+      speedSlider.addEventListener("input", () => {
+        const val = parseInt(speedSlider.value, 10);
+        speedVal.innerText = `${val}x`;
+        sim.simTimeMultiplier = val;
+        sim.log("INFO", "SYSTEM", `Simulation time speed multiplier updated to: ${val}x`);
+      });
+
+      // Manual price slider update
+      const priceSlider = document.getElementById("manualPriceSlider");
+      priceSlider.addEventListener("input", () => {
+        if (dataSelect.value === "mock") {
+          sim.lastPrice = parseFloat(priceSlider.value);
+          document.getElementById("manualPriceVal").innerText = "$" + fmtCommas(sim.lastPrice);
+        }
+      });
+
+      // Touch Screen Dimmer Logic
+      document.getElementById("lcdScreen").addEventListener("click", () => {
+        sim.cycleBrightness();
+      });
+
+      // Hard Reset button click handler
+      document.getElementById("resetBtn").addEventListener("click", () => {
+        sim.reset();
+      });
+
+      // Storage: Sector corruption
+      document.getElementById("corruptFsBtn").addEventListener("click", () => {
+        sim.isFsHealthy = false;
+        document.getElementById("fsHealthVal").innerText = "CORRUPTED (sector read/write errors)";
+        document.getElementById("fsHealthVal").style.color = "var(--red)";
+        sim.log("ERROR", "LFS", "Simulated sector block errors. LittleFS corrupted.");
+      });
+
+      // Storage: Mount / Format
+      document.getElementById("formatFsBtn").addEventListener("click", () => {
+        sim.isFsHealthy = true;
+        document.getElementById("fsHealthVal").innerText = "OK";
+        document.getElementById("fsHealthVal").style.color = "var(--green)";
+        sim.mountLittleFS();
+      });
+
+      // Storage: Wipe DB
+      document.getElementById("wipeDbBtn").addEventListener("click", () => {
+        sim.wipeDb();
+        sim.log("WARNING", "LFS", "Formated sector. LittleFS wiped (/candles.bin zero-filled).");
+        sim.rebuildCandleTableUI();
+      });
+
+      // Console: Clear terminal logs
+      document.getElementById("clearTerminalBtn").addEventListener("click", () => {
+        document.getElementById("serialLogContainer").innerHTML = "";
+        sim.terminalLogs = [];
+      });
+
+      // Console: Copy logs
+      document.getElementById("copyLogsBtn").addEventListener("click", () => {
+        const lines = sim.terminalLogs.map(l => `[${l.time}s] [${l.module}] ${l.text}`).join("\n");
+        navigator.clipboard.writeText(lines).then(() => {
+          alert("Serial logs copied to clipboard!");
+        });
+      });
+
+      // Console: Filter search
+      document.getElementById("serialSearchInput").addEventListener("input", () => {
+        sim.refreshTerminal();
+      });
+
+      // Main clock/ticker loop (every 30ms)
+      setInterval(() => {
+        sim.tick();
+      }, 30);
+    });
+  </script>
+</body>
+</html>

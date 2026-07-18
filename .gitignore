@@ -1,0 +1,4 @@
+firmware/btc_ticker/config.h
+firmware/btc_ticker/build/
+.DS_Store
+.claude/
