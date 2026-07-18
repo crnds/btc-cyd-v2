@@ -3,8 +3,8 @@
 // LittleFS ring-file mini-database surviving reboots/power loss. Candle
 // size, chart range, price fetch cadence, chart style, brightness, night
 // mode (red-only UI 23:00-08:00, plus a manual force-on), and screen
-// orientation are all user-configurable from the Settings page (gear icon,
-// top right).
+// orientation are all user-configurable from the Settings page (gear
+// button, bottom right).
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
@@ -110,32 +110,69 @@ uint32_t lastTouchMs = 0;
 
 float lastPrice = NAN;
 float changePct = NAN;
+float dayHigh = NAN;  // 24h high/low from the ticker payload, for the range bar
+float dayLow = NAN;
 uint32_t priceOkMs = 0;
 
 enum class Page : uint8_t { DASHBOARD, SETTINGS };
 static Page currentPage = Page::DASHBOARD;
-static int settingsScroll = 0;  // px, 0..(list height - viewport)
+static int settingsScroll = 0;  // px, 0..uiSettingsMaxScroll()
 static int pickerRow = -1;      // -1 = settings list, >=0 = option picker for that row
+static int confirmIdx = -1;     // >=0 = confirmation page showing, pending option idx for pickerRow
 
 static void renderIfDue(bool force = false);
 static void applySettingChange(uint8_t mask);
 
 // ── touch ──────────────────────────────────────────────────
-// Dashboard: gear opens Settings. Settings list: drag scrolls, tap on a row
-// opens its option picker; picker: tap an option to select it and return.
-// Taps fire on release so a drag that starts on a row doesn't also select it.
+// Dashboard: gear opens Settings. Settings list: drag scrolls; tap on a
+// binary row (On/Off) toggles it in place, tap on a multi-choice row opens
+// its option picker. Picker: tap an option to select it and return —
+// except candle size, which first shows a confirmation page because it
+// wipes the candle DB. Taps fire on release so a drag that starts on a row
+// doesn't also select it.
+// Feedback: while any touch registers, renderIfDue overlays a 3px 4-side
+// border (uiDrawTouchFlash) for one frame per detection, and the pressed
+// row/button highlights (uiSetPressedPoint).
 static int pressX = 0, pressY = 0;
 static bool dragging = false;
 static int dragStartScroll = 0;
 static const int DRAG_THRESHOLD_PX = 10;  // resistive touch jitters a few px
+static bool touchFlashOn = false;  // touch level at the last handleTouch pass
+
+// Persist every row named by a settingsSet() change-mask and apply side
+// effects (brightness, job intervals, candle reset, ...).
+static void applyMask(uint8_t mask) {
+for (int r = 0; r < ROW_COUNT; r++) {
+if (mask & (1u << r)) settingsSaveRow(prefs, r);
+}
+applySettingChange(mask);
+}
 
 static void handleTap(int tx, int ty) {
 if (currentPage == Page::DASHBOARD) {
-if (tx >= UI_GEAR_HIT_X0 && ty <= UI_GEAR_HIT_Y1) {
+if (tx >= UI_GEAR_HIT_X0 && ty >= UI_GEAR_HIT_Y0) {
 currentPage = Page::SETTINGS;
 settingsScroll = 0;
 pickerRow = -1;
+confirmIdx = -1;
 renderIfDue(true);
+}
+return;
+}
+
+// Confirmation page (a destructive change is pending) — modal: only the
+// two buttons respond.
+if (confirmIdx >= 0 && pickerRow >= 0) {
+if (ty >= UI_CONFIRM_Y0 && ty < UI_CONFIRM_Y1) {
+if (tx >= UI_CONFIRM_OK_X0 && tx < UI_CONFIRM_OK_X1) {
+applyMask(settingsSet(pickerRow, (uint8_t)confirmIdx));
+confirmIdx = -1;
+pickerRow = -1;  // back to the list, which now shows the new value
+renderIfDue(true);
+} else if (tx >= UI_CONFIRM_CANCEL_X0 && tx < UI_CONFIRM_CANCEL_X1) {
+confirmIdx = -1;  // back to the picker, nothing changed
+renderIfDue(true);
+}
 }
 return;
 }
@@ -149,15 +186,20 @@ renderIfDue(true);
 }
 return;
 }
-int idx = (ty - UI_SET_TITLE_H) / UI_PICK_ROW_H;
-if (idx < settingsOptionCount(pickerRow)) {
-uint8_t mask = settingsSet(pickerRow, (uint8_t)idx);
-for (int r = 0; r < ROW_COUNT; r++) {
-if (mask & (1u << r)) settingsSaveRow(prefs, r);
-}
-applySettingChange(mask);
+int idx = uiPickerOptionAt(pickerRow, ty);
+if (idx >= 0) {
+if (idx == settingsOptionIndex(pickerRow)) {
+pickerRow = -1;  // re-tapped the current value: just close the picker
+renderIfDue(true);
+} else if (pickerRow == ROW_CANDLE_IV) {
+// Destructive (wipes ring + flash DB) — confirm before applying.
+confirmIdx = idx;
+renderIfDue(true);
+} else {
+applyMask(settingsSet(pickerRow, (uint8_t)idx));
 pickerRow = -1;  // back to the list, which now shows the new value
 renderIfDue(true);
+}
 }
 return;
 }
@@ -170,9 +212,14 @@ renderIfDue(true);
 }
 return;
 }
-int row = (ty - UI_SET_TITLE_H + settingsScroll) / UI_SET_ROW_H;
-if (row < ROW_COUNT) {
+int row = uiSettingsItemAt(settingsScroll, ty);
+if (row >= 0) {
+if (settingsOptionCount(row) == 2) {
+// Binary setting: the row IS the switch — flip in place, no picker.
+applyMask(settingsSet(row, (uint8_t)(1 - settingsOptionIndex(row))));
+} else {
 pickerRow = row;
+}
 renderIfDue(true);
 }
 }
@@ -181,6 +228,16 @@ void handleTouch() {
 int32_t tx, ty;
 bool touchDown = gfx.getTouch(&tx, &ty);
 uint32_t now = millis();
+
+touchFlashOn = touchDown;
+// Keep the UI's pressed-point state current BEFORE the edge render below,
+// so pressed-state highlights appear/clear on the same frame.
+if (touchDown) uiSetPressedPoint(tx, ty, true);
+else uiSetPressedPoint(pressX, pressY, false);
+// Force a render on both touch edges so the feedback border appears the
+// moment a touch registers and clears the moment it releases, instead of
+// waiting for the next 1Hz tick.
+if (touchDown != touchWasDown) renderIfDue(true);
 
 if (touchDown && !touchWasDown) {
 // press: remember where, in case this becomes a drag
@@ -194,8 +251,7 @@ if (currentPage == Page::SETTINGS && pickerRow < 0) {
 int dy = (int)ty - pressY;
 if (dragging || abs(dy) > DRAG_THRESHOLD_PX) {
 dragging = true;
-int maxScroll = ROW_COUNT * UI_SET_ROW_H - UI_SET_VIEW_H;
-if (maxScroll < 0) maxScroll = 0;
+int maxScroll = uiSettingsMaxScroll();
 int s = dragStartScroll - dy;
 if (s < 0) s = 0;
 if (s > maxScroll) s = maxScroll;
@@ -218,10 +274,12 @@ touchWasDown = touchDown;
 
 // ── fetch jobs ────────────────────────────────────────────
 static bool jobPrice() {
-float p, c;
-if (!fetchPrice(p, c)) return false;
+float p, c, h, l;
+if (!fetchPrice(p, c, h, l)) return false;
 lastPrice = p;
 if (!isnan(c)) changePct = c;
+if (!isnan(h)) dayHigh = h;
+if (!isnan(l)) dayLow = l;
 priceOkMs = millis();
 // At 1m/5m fetch cadence the keep-alive socket sits idle (likely dead)
 // between polls anyway — release its ~45KB mbedTLS session heap.
@@ -349,8 +407,8 @@ if (mask & (1u << ROW_RANGE)) {
 backfillDoneOnce = false;
 backfillNextMs = millis();
 }
-// ROW_STYLE, ROW_NIGHT and ROW_NIGHT_FORCE need no side effect — the next
-// render reads gSettings / applies uiSetNightMode directly.
+// ROW_STYLE, ROW_NIGHT, ROW_NIGHT_FORCE and ROW_RANGEBAR need no side effect
+// — the next render reads gSettings / applies uiSetNightMode directly.
 }
 
 // ── WiFi supervisor ────────────────────────────────────────
@@ -386,11 +444,11 @@ esp_restart();
 }
 
 static void maybeHeapLog() {
-static uint32_t last = 0;
-uint32_t now = millis();
-if (now - last < 60000UL) return;
-last = now;
-Serial.printf("heap: %u free\n", (unsigned)ESP.getFreeHeap());
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  if (now - last < 60000UL) return;
+  last = now;
+  Serial.printf("heap: %u free\n", (unsigned)ESP.getFreeHeap());
 }
 
 // ── device status stats (footer) ───────────────────────────
@@ -407,7 +465,7 @@ uint32_t total = ESP.getHeapSize();
 return total ? (uint8_t)(((total - ESP.getFreeHeap()) * 100UL) / total) : 0;
 }
 
-// ── render (1Hz, or immediately after any accepted touch) ──
+// ── render (1Hz, or forced on touch edges/taps/scrolls) ────
 // Night mode: forced on by "Night mode active", else red-only UI between
 // 23:00 and 08:00 local when "Night schedule" is enabled.
 // Pre-NTP (no valid clock) keeps normal colors.
@@ -419,12 +477,27 @@ if (!getLocalTime(&t, 0)) return false;
 return t.tm_hour >= 23 || t.tm_hour < 8;
 }
 
+static uint8_t getAutoBrightnessVal() {
+  int ldr = analogRead(34);
+  if (ldr < 800) return BRI_VAL[0];      // 5%
+  if (ldr < 1500) return BRI_VAL[1];     // 25%
+  if (ldr < 2200) return BRI_VAL[2];     // 50%
+  if (ldr < 3000) return BRI_VAL[3];     // 75%
+  return BRI_VAL[4];                     // 100%
+}
+
 // Dims to 5% brightness while night mode is active, restoring the user's
 // chosen brightness setting the rest of the time. Unconditional (no
 // on/off-edge memo) so a brightness-setting change made *while* night mode
 // is active can't desync from what's actually on the panel.
 static void applyNightBrightness(bool on) {
-gfx.setBrightness(on ? BRI_VAL[0] : BRI_VAL[gSettings.briIdx]);
+  if (on) {
+    gfx.setBrightness(BRI_VAL[0]);
+  } else if (gSettings.briIdx == 5) {
+    gfx.setBrightness(getAutoBrightnessVal());
+  } else {
+    gfx.setBrightness(BRI_VAL[gSettings.briIdx]);
+  }
 }
 
 static void renderIfDue(bool force) {
@@ -439,7 +512,8 @@ bool night = nightModeActive();
 uiSetNightMode(night);
 applyNightBrightness(night);
 if (currentPage == Page::SETTINGS) {
-  if (pickerRow >= 0) uiRenderSettingsPicker(g, pickerRow);
+  if (confirmIdx >= 0 && pickerRow >= 0) uiRenderConfirm(g, pickerRow, confirmIdx);
+  else if (pickerRow >= 0) uiRenderSettingsPicker(g, pickerRow);
   else uiRenderSettings(g, settingsScroll);
 } else {
 UiState st;
@@ -447,11 +521,14 @@ st.wifiConnected = WiFi.status() == WL_CONNECTED;
 st.priceOkMs = priceOkMs;
 st.price = lastPrice;
 st.changePct = changePct;
+st.dayHigh = dayHigh;
+st.dayLow = dayLow;
 st.cpuPct = gCpuPct;
 st.romPct = romUsagePct();
 st.ramPct = ramUsagePct();
 uiRender(g, st);
 }
+if (touchFlashOn) uiDrawTouchFlash(g);  // one-frame border per touch register
 presentFrame();
 }
 
@@ -479,7 +556,11 @@ prefs.remove("briIdx");  // legacy key, superseded by settings.h's "s.bri"
 settingsLoad(prefs);
 
 gfx.setRotation(gSettings.flip ? 3 : 1);
-gfx.setBrightness(BRI_VAL[gSettings.briIdx]);
+if (gSettings.briIdx == 5) {
+  gfx.setBrightness(getAutoBrightnessVal());
+} else {
+  gfx.setBrightness(BRI_VAL[gSettings.briIdx]);
+}
 candleSeconds = settingsCandleSeconds();
 jobs[0].interval = settingsPriceIntervalMs();
 

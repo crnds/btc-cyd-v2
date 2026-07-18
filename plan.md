@@ -84,7 +84,7 @@ y  28..80   Big price "$118,432" + 24h change "+1.42%" (grn/red) right-aligned
 y  82..214  Chart: plot x=16..303 (288 cols), y=84..212 (128px)
             per candle: 1px column — wick l..h dim grn/red, body o..c bright
             (min 1px); forming candle live-updates; H/L labels overlaid dim
-y 216..239  Footer: last-candle age, free heap, IP (dim, size-1)
+y 216..239  Footer: activity status (CPU, ROM, RAM %) (dim, size-1)
 ```
 Heap note: allocate the sprite **before** `WiFi.begin()` (16-bit needs 150KB contiguous); keep cyd-stripdown's 8-bit fallback.
 

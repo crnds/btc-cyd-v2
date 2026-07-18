@@ -16,7 +16,7 @@ static bool fresh = true;  // true -> (re)configure + full handshake next GET
 // Price polls at 1 Hz — a fresh TLS handshake per poll costs ~1-2s of mbedTLS
 // CPU. This module keeps ONE keep-alive HTTP/1.1 session to Binance so a
 // steady-state poll is a single request on the already-open socket.
-bool fetchPrice(float& price, float& changePct) {
+bool fetchPrice(float& price, float& changePct, float& high24h, float& low24h) {
   if (fresh) {
     tls.setInsecure();           // v1: no cert pinning
     http.setConnectTimeout(HTTP_TIMEOUT_MS);
@@ -46,6 +46,8 @@ bool fetchPrice(float& price, float& changePct) {
   JsonDocument filter;
   filter["lastPrice"] = true;
   filter["priceChangePercent"] = true;
+  filter["highPrice"] = true;
+  filter["lowPrice"] = true;
   JsonDocument doc;
   DeserializationError err =
       deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -53,9 +55,13 @@ bool fetchPrice(float& price, float& changePct) {
 
   const char* p = doc["lastPrice"];
   const char* c = doc["priceChangePercent"];
+  const char* h = doc["highPrice"];
+  const char* l = doc["lowPrice"];
   if (!p) return false;
   price = atof(p);
   changePct = c ? atof(c) : NAN;
+  high24h = h ? atof(h) : NAN;
+  low24h = l ? atof(l) : NAN;
   return price > 0;
 }
 

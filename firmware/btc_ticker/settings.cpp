@@ -1,10 +1,10 @@
 #include "settings.h"
 #include "candles.h"
 
-Settings gSettings = {4, 0, 0, 0, 1, 0, 1, 0};
+Settings gSettings = {4, 0, 0, 0, 1, 0, 1, 0, 1};
 
-const uint8_t BRI_VAL[BRI_COUNT] = {13, 64, 128, 191, 255};
-const char* const BRI_LABEL[BRI_COUNT] = {"5%", "25%", "50%", "75%", "100%"};
+const uint8_t BRI_VAL[BRI_COUNT] = {13, 64, 128, 191, 255, 0};
+const char* const BRI_LABEL[BRI_COUNT] = {"5%", "25%", "50%", "75%", "100%", "Auto"};
 
 const uint32_t PRICE_IV_MS[PRICE_IV_COUNT] = {1000, 5000, 10000, 60000, 300000};
 const char* const PRICE_IV_LABEL[PRICE_IV_COUNT] = {"1s", "5s", "10s", "1m", "5m"};
@@ -15,7 +15,7 @@ const char* const CANDLE_IV_LABEL[CANDLE_IV_COUNT] = {"5m", "15m", "1h", "4h"};
 const uint32_t RANGE_SEC[RANGE_COUNT] = {12UL * 3600, 24UL * 3600, 7UL * 24 * 3600};
 const char* const RANGE_LABEL[RANGE_COUNT] = {"12h", "24h", "7D"};
 
-const char* const STYLE_LABEL[STYLE_COUNT] = {"Red/Grn", "Blk/Wht", "Line"};
+const char* const STYLE_LABEL[STYLE_COUNT] = {"Red/Green", "Black/White", "Line"};
 
 static const char* ONOFF_LABEL[2] = {"Off", "On"};
 
@@ -29,6 +29,7 @@ const char* settingsValueLabel(int row) {
     case ROW_STYLE:      return STYLE_LABEL[gSettings.styleIdx];
     case ROW_NIGHT:      return ONOFF_LABEL[gSettings.nightEn];
     case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
+    case ROW_RANGEBAR:   return ONOFF_LABEL[gSettings.rangeBar];
     default:             return "";
   }
 }
@@ -43,6 +44,7 @@ int settingsOptionCount(int row) {
     case ROW_STYLE:      return STYLE_COUNT;
     case ROW_NIGHT:      return 2;
     case ROW_NIGHT_FORCE: return 2;
+    case ROW_RANGEBAR:   return 2;
     default:             return 0;
   }
 }
@@ -57,6 +59,7 @@ const char* settingsOptionLabel(int row, int idx) {
     case ROW_STYLE:      return STYLE_LABEL[idx];
     case ROW_NIGHT:      return ONOFF_LABEL[idx];
     case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
+    case ROW_RANGEBAR:   return ONOFF_LABEL[idx];
     default:             return "";
   }
 }
@@ -71,6 +74,7 @@ uint8_t settingsOptionIndex(int row) {
     case ROW_STYLE:      return gSettings.styleIdx;
     case ROW_NIGHT:      return gSettings.nightEn;
     case ROW_NIGHT_FORCE: return gSettings.nightForce;
+    case ROW_RANGEBAR:   return gSettings.rangeBar;
     default:             return 0;
   }
 }
@@ -84,6 +88,7 @@ void settingsLoad(Preferences& p) {
   gSettings.styleIdx = p.getUChar("s.sty", 0);
   gSettings.nightEn = p.getUChar("s.nit", 1);
   gSettings.nightForce = p.getUChar("s.nf", 0);
+  gSettings.rangeBar = p.getUChar("s.rbar", 1);
 
   if (gSettings.briIdx >= BRI_COUNT) gSettings.briIdx = 4;
   if (gSettings.flip > 1) gSettings.flip = 0;
@@ -93,6 +98,7 @@ void settingsLoad(Preferences& p) {
   if (gSettings.styleIdx >= STYLE_COUNT) gSettings.styleIdx = 0;
   if (gSettings.nightEn > 1) gSettings.nightEn = 1;
   if (gSettings.nightForce > 1) gSettings.nightForce = 0;
+  if (gSettings.rangeBar > 1) gSettings.rangeBar = 1;
 
   // A combo persisted before this auto-adjust logic existed (or corrupted
   // NVS) could be invalid on load; fix it up the same way settingsCycle does.
@@ -111,6 +117,7 @@ void settingsSaveRow(Preferences& p, int row) {
     case ROW_STYLE:      p.putUChar("s.sty", gSettings.styleIdx); break;
     case ROW_NIGHT:      p.putUChar("s.nit", gSettings.nightEn); break;
     case ROW_NIGHT_FORCE: p.putUChar("s.nf", gSettings.nightForce); break;
+    case ROW_RANGEBAR:   p.putUChar("s.rbar", gSettings.rangeBar); break;
   }
 }
 
@@ -129,6 +136,7 @@ uint8_t settingsSet(int row, uint8_t idx) {
     case ROW_STYLE:      gSettings.styleIdx = idx; break;
     case ROW_NIGHT:      gSettings.nightEn = idx; break;
     case ROW_NIGHT_FORCE: gSettings.nightForce = idx; break;
+    case ROW_RANGEBAR:   gSettings.rangeBar = idx; break;
   }
 
   uint32_t count = RANGE_SEC[gSettings.rangeIdx] / CANDLE_IV_SEC[gSettings.candleIvIdx];

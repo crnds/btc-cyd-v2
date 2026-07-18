@@ -11,6 +11,7 @@ enum SettingRow : uint8_t {
   ROW_STYLE,
   ROW_NIGHT,
   ROW_NIGHT_FORCE,
+  ROW_RANGEBAR,
   ROW_COUNT
 };
 
@@ -25,10 +26,11 @@ struct Settings {
   uint8_t styleIdx;     // index into STYLE_LABEL (ChartStyle), default 0 (Red/Green)
   uint8_t nightEn;      // 0 = off, 1 = red-only UI 23:00-08:00, default 1 (on)
   uint8_t nightForce;   // 0 = schedule only, 1 = force night mode on, default 0
+  uint8_t rangeBar;     // 0 = hide the 24h range position bar, 1 = show, default 1
 };
 extern Settings gSettings;
 
-static const int BRI_COUNT = 5;
+static const int BRI_COUNT = 6;
 extern const uint8_t BRI_VAL[BRI_COUNT];
 extern const char* const BRI_LABEL[BRI_COUNT];
 

@@ -30,3 +30,14 @@ firmware/btc_ticker/
 ├── net_klines.h/.cpp# streaming klines backfill parser
 └── ui.h/.cpp        # sprite drawing
 ```
+
+## Simulator
+
+The project includes `simulator.html`, a high-fidelity ESP32 CYD hardware simulator that runs entirely in the browser. It features:
+- **Live Market Feed**: Fetches real-time market price updates and backfills candle histories using the Binance API.
+- **Hardware Simulation**: Simulates the LovyanGFX display engine, touch digitizer coordinate maps, and local NVS settings.
+- **Interactive Settings Page**: Tap the gear icon in the footer to access Settings, drag-scroll the rows, change chart styles (Red/Green, Black/White, Line), screen rotation (flip), and adjust brightness.
+- **Diagnostics Dashboard**: Configurable network status controls (WiFi router connection, API availability), local LittleFS storage sector corruption tools, database wipers, and real-time serial logs console.
+
+To run, simply open `simulator.html` in any modern web browser.
+
