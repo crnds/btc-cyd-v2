@@ -114,29 +114,55 @@ uint32_t priceOkMs = 0;
 
 enum class Page : uint8_t { DASHBOARD, SETTINGS };
 static Page currentPage = Page::DASHBOARD;
+static int settingsScroll = 0;  // px, 0..(list height - viewport)
+static int pickerRow = -1;      // -1 = settings list, >=0 = option picker for that row
 
 static void renderIfDue(bool force = false);
 static void applySettingChange(uint8_t mask);
 
-// ── touch (gear opens Settings; Settings rows cycle their value) ──
-void handleTouch() {
-int32_t tx, ty;
-bool touchDown = gfx.getTouch(&tx, &ty);
-uint32_t now = millis();
-bool tapEdge = touchDown && !touchWasDown && now - lastTouchMs > TOUCH_DEBOUNCE_MS;
-touchWasDown = touchDown;
-if (!tapEdge) return;
-lastTouchMs = now;
+// ── touch ──────────────────────────────────────────────────
+// Dashboard: gear opens Settings. Settings list: drag scrolls, tap on a row
+// opens its option picker; picker: tap an option to select it and return.
+// Taps fire on release so a drag that starts on a row doesn't also select it.
+static int pressX = 0, pressY = 0;
+static bool dragging = false;
+static int dragStartScroll = 0;
+static const int DRAG_THRESHOLD_PX = 10;  // resistive touch jitters a few px
 
+static void handleTap(int tx, int ty) {
 if (currentPage == Page::DASHBOARD) {
 if (tx >= UI_GEAR_HIT_X0 && ty <= UI_GEAR_HIT_Y1) {
 currentPage = Page::SETTINGS;
+settingsScroll = 0;
+pickerRow = -1;
 renderIfDue(true);
 }
 return;
 }
 
-// Settings page
+// Option picker page
+if (pickerRow >= 0) {
+if (ty < UI_SET_TITLE_H) {
+if (tx < UI_BACK_HIT_X1) {
+pickerRow = -1;
+renderIfDue(true);
+}
+return;
+}
+int idx = (ty - UI_SET_TITLE_H) / UI_PICK_ROW_H;
+if (idx < settingsOptionCount(pickerRow)) {
+uint8_t mask = settingsSet(pickerRow, (uint8_t)idx);
+for (int r = 0; r < ROW_COUNT; r++) {
+if (mask & (1u << r)) settingsSaveRow(prefs, r);
+}
+applySettingChange(mask);
+pickerRow = -1;  // back to the list, which now shows the new value
+renderIfDue(true);
+}
+return;
+}
+
+// Settings list page
 if (ty < UI_SET_TITLE_H) {
 if (tx < UI_BACK_HIT_X1) {
 currentPage = Page::DASHBOARD;
@@ -144,15 +170,50 @@ renderIfDue(true);
 }
 return;
 }
-int row = (ty - UI_SET_TITLE_H) / UI_SET_ROW_H;
+int row = (ty - UI_SET_TITLE_H + settingsScroll) / UI_SET_ROW_H;
 if (row < ROW_COUNT) {
-uint8_t mask = settingsCycle(row);
-for (int r = 0; r < ROW_COUNT; r++) {
-if (mask & (1u << r)) settingsSaveRow(prefs, r);
-}
-applySettingChange(mask);
+pickerRow = row;
 renderIfDue(true);
 }
+}
+
+void handleTouch() {
+int32_t tx, ty;
+bool touchDown = gfx.getTouch(&tx, &ty);
+uint32_t now = millis();
+
+if (touchDown && !touchWasDown) {
+// press: remember where, in case this becomes a drag
+pressX = tx;
+pressY = ty;
+dragging = false;
+dragStartScroll = settingsScroll;
+} else if (touchDown && touchWasDown) {
+// move: only the settings list scrolls
+if (currentPage == Page::SETTINGS && pickerRow < 0) {
+int dy = (int)ty - pressY;
+if (dragging || abs(dy) > DRAG_THRESHOLD_PX) {
+dragging = true;
+int maxScroll = ROW_COUNT * UI_SET_ROW_H - UI_SET_VIEW_H;
+if (maxScroll < 0) maxScroll = 0;
+int s = dragStartScroll - dy;
+if (s < 0) s = 0;
+if (s > maxScroll) s = maxScroll;
+if (s != settingsScroll) {
+settingsScroll = s;
+renderIfDue(true);
+}
+}
+}
+} else if (!touchDown && touchWasDown) {
+// release: a tap unless it turned into a drag
+if (!dragging && now - lastTouchMs > TOUCH_DEBOUNCE_MS) {
+lastTouchMs = now;
+handleTap(pressX, pressY);
+}
+dragging = false;
+}
+touchWasDown = touchDown;
 }
 
 // ── fetch jobs ────────────────────────────────────────────
@@ -263,9 +324,10 @@ backfillNextMs = nowMs;
 
 // ── apply a settings change live (called right after settingsCycle) ──
 static void applySettingChange(uint8_t mask) {
-if (mask & (1u << ROW_BRIGHTNESS)) {
-gfx.setBrightness(BRI_VAL[gSettings.briIdx]);
-}
+// Brightness itself is applied by applyNightBrightness (called every
+// renderIfDue right after this), which also accounts for night-mode dim —
+// setting it here too would flash the user's chosen brightness on screen
+// for one frame even while night mode is forcing 5%.
 if (mask & (1u << ROW_FLIP)) {
 gfx.setRotation(gSettings.flip ? 3 : 1);
 }
@@ -357,6 +419,14 @@ if (!getLocalTime(&t, 0)) return false;
 return t.tm_hour >= 23 || t.tm_hour < 8;
 }
 
+// Dims to 5% brightness while night mode is active, restoring the user's
+// chosen brightness setting the rest of the time. Unconditional (no
+// on/off-edge memo) so a brightness-setting change made *while* night mode
+// is active can't desync from what's actually on the panel.
+static void applyNightBrightness(bool on) {
+gfx.setBrightness(on ? BRI_VAL[0] : BRI_VAL[gSettings.briIdx]);
+}
+
 static void renderIfDue(bool force) {
 static uint32_t lastRenderMs = 0;
 static bool renderedOnce = false;
@@ -365,9 +435,12 @@ if (!force && renderedOnce && now - lastRenderMs < 1000) return;
 lastRenderMs = now;
 renderedOnce = true;
 
-uiSetNightMode(nightModeActive());
+bool night = nightModeActive();
+uiSetNightMode(night);
+applyNightBrightness(night);
 if (currentPage == Page::SETTINGS) {
-  uiRenderSettings(g);
+  if (pickerRow >= 0) uiRenderSettingsPicker(g, pickerRow);
+  else uiRenderSettings(g, settingsScroll);
 } else {
 UiState st;
 st.wifiConnected = WiFi.status() == WL_CONNECTED;

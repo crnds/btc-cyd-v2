@@ -57,6 +57,12 @@ inline uint32_t settingsPriceIntervalMs() { return PRICE_IV_MS[gSettings.priceIv
 // Label for the current value of `row`, for display in the settings list.
 const char* settingsValueLabel(int row);
 
+// Option-picker accessors: number of options for `row`, the label of option
+// `idx`, and the currently selected index.
+int settingsOptionCount(int row);
+const char* settingsOptionLabel(int row, int idx);
+uint8_t settingsOptionIndex(int row);
+
 // Loads all settings from NVS (namespace already open on `p`), clamping any
 // out-of-range stored index back to its field's default.
 void settingsLoad(Preferences& p);
@@ -64,10 +70,10 @@ void settingsLoad(Preferences& p);
 // Persists just the one field named by `row`.
 void settingsSaveRow(Preferences& p, int row);
 
-// Advances `row`'s option by one (with wraparound). If the resulting
-// candle-size x range combination would need more than MAX_CANDLES visible
-// candles, auto-adjusts the *other* of that pair back into range (cycling
-// candle size snaps range down to 24h; cycling range snaps candle size up to
-// 1h). Returns a bitmask (1u<<row) of every row that changed, so the caller
-// knows which ones to persist and re-apply.
-uint8_t settingsCycle(int row);
+// Sets `row` to option `idx` (picked from the option-picker page). If the
+// resulting candle-size x range combination would need more than MAX_CANDLES
+// visible candles, auto-adjusts the *other* of that pair back into range
+// (setting candle size snaps range down to 24h; setting range snaps candle
+// size up to 1h). Returns a bitmask (1u<<row) of every row that changed, so
+// the caller knows which ones to persist and re-apply; 0 if nothing changed.
+uint8_t settingsSet(int row, uint8_t idx);

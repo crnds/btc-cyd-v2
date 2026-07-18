@@ -24,8 +24,13 @@ void uiRender(lgfx::LovyanGFX* g, const UiState& st);
 // gfx fallback), COL_* keep their RGB565 defaults.
 void uiUsePalette(lgfx::LGFX_Sprite& spr);
 
-// Renders the settings list page.
-void uiRenderSettings(lgfx::LovyanGFX* g);
+// Renders the settings list page, with the rows shifted up by `scrollPx`
+// (0 = top of the list; caller clamps to UI_SET_MAX_SCROLL).
+void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx);
+
+// Renders the option-picker page for settings row `row`: every option as a
+// radio row, the current one highlighted.
+void uiRenderSettingsPicker(lgfx::LovyanGFX* g, int row);
 
 // Switches every UI color to red-only (night mode) or back to normal.
 // Idempotent; call before each render with the currently-desired state.
@@ -38,8 +43,12 @@ void uiSetNightMode(bool on);
 static const int UI_GEAR_HIT_X0 = 270;
 static const int UI_GEAR_HIT_Y1 = 44;
 
-// Settings page layout, shared between drawing (ui.cpp) and hit-testing
-// (btc_ticker.ino) so they can't drift apart. 30 + 8 rows x 26 = 238 of 240.
+// Settings page layout, shared between drawing (ui.cpp) and hit-testing /
+// scroll clamping (btc_ticker.ino) so they can't drift apart. The list is
+// taller than the viewport (8 rows x 40 = 320 vs 210) and scrolls by drag;
+// the option-picker page is short enough to always fit (max 5 options).
 static const int UI_SET_TITLE_H = 30;
-static const int UI_SET_ROW_H = 26;
+static const int UI_SET_ROW_H = 40;
+static const int UI_SET_VIEW_H = 240 - UI_SET_TITLE_H;  // 210
+static const int UI_PICK_ROW_H = 40;
 static const int UI_BACK_HIT_X1 = 90;  // tap left of this, in the title bar, goes back

@@ -83,6 +83,7 @@ void uiUsePalette(lgfx::LGFX_Sprite& spr) {
 }
 
 static const int SCREEN_W      = 320;
+static const int SCREEN_H      = 240;
 static const int PAD_RIGHT     = 20;
 static const int CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 300
 
@@ -367,36 +368,85 @@ static const char* const SETTINGS_ROW_LABELS[ROW_COUNT] = {
   "Night schedule", "Night mode active"
 };
 
-void uiRenderSettings(lgfx::LovyanGFX* g) {
-  g->fillScreen(COL_BG);
-
+// Fixed title bar shared by the settings list and the option picker.
+static void drawSettingsTitle(lgfx::LovyanGFX* g, const char* title) {
   g->setTextSize(2);
   g->setTextColor(COL_TEXT);
   g->setCursor(8, 8);
   g->print("< Back");
 
-  String title = "Settings";
   int tw = g->textWidth(title);
   g->setCursor(CONTENT_RIGHT - 8 - tw, 8);
   g->print(title);
 
   g->drawFastHLine(0, UI_SET_TITLE_H - 1, CONTENT_RIGHT, COL_BORDER);
+}
+
+void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx) {
+  g->fillScreen(COL_BG);
+
+  // Rows scroll under the fixed title bar — clip so a half-scrolled row
+  // can't paint over it.
+  g->setClipRect(0, UI_SET_TITLE_H, SCREEN_W, SCREEN_H - UI_SET_TITLE_H);
 
   for (int i = 0; i < ROW_COUNT; i++) {
-    int y = UI_SET_TITLE_H + i * UI_SET_ROW_H;
+    int y = UI_SET_TITLE_H + i * UI_SET_ROW_H - scrollPx;
+    if (y + UI_SET_ROW_H <= UI_SET_TITLE_H || y >= SCREEN_H) continue;
+
+    g->setTextSize(1);
+    g->setTextColor(COL_TEXT);
+    g->setCursor(12, y + (UI_SET_ROW_H - 8) / 2);
+    g->print(SETTINGS_ROW_LABELS[i]);
 
     g->setTextSize(2);
-    g->setTextColor(COL_TEXT);
-    g->setCursor(10, y + 5);
-    g->print(SETTINGS_ROW_LABELS[i]);
+    int chevX = CONTENT_RIGHT - 10 - g->textWidth(">");
+    g->setTextColor(COL_TEXT2);
+    g->setCursor(chevX, y + (UI_SET_ROW_H - 16) / 2);
+    g->print(">");
 
     const char* val = settingsValueLabel(i);
     int vw = g->textWidth(val);
     g->setTextColor(COL_AMBER);
-    g->setCursor(CONTENT_RIGHT - 10 - vw, y + 5);
+    g->setCursor(chevX - 8 - vw, y + (UI_SET_ROW_H - 16) / 2);
     g->print(val);
 
     g->drawFastHLine(0, y + UI_SET_ROW_H - 1, CONTENT_RIGHT, COL_BORDER);
+  }
+
+  // Scrollbar thumb, flush against CONTENT_RIGHT.
+  int listH = ROW_COUNT * UI_SET_ROW_H;
+  if (listH > UI_SET_VIEW_H) {
+    int thumbH = UI_SET_VIEW_H * UI_SET_VIEW_H / listH;
+    if (thumbH < 12) thumbH = 12;
+    int maxScroll = listH - UI_SET_VIEW_H;
+    int thumbY = UI_SET_TITLE_H + (UI_SET_VIEW_H - thumbH) * scrollPx / maxScroll;
+    g->fillRect(CONTENT_RIGHT - 3, thumbY, 3, thumbH, COL_TEXT2);
+  }
+
+  g->clearClipRect();
+  drawSettingsTitle(g, "Settings");
+}
+
+void uiRenderSettingsPicker(lgfx::LovyanGFX* g, int row) {
+  g->fillScreen(COL_BG);
+  drawSettingsTitle(g, SETTINGS_ROW_LABELS[row]);
+
+  int n = settingsOptionCount(row);
+  int cur = settingsOptionIndex(row);
+  for (int i = 0; i < n; i++) {
+    int y = UI_SET_TITLE_H + i * UI_PICK_ROW_H;
+    int cy = y + UI_PICK_ROW_H / 2;
+    bool sel = i == cur;
+
+    g->drawCircle(18, cy, 6, sel ? COL_AMBER : COL_TEXT2);
+    if (sel) g->fillCircle(18, cy, 3, COL_AMBER);
+
+    g->setTextSize(2);
+    g->setTextColor(sel ? COL_TEXT : COL_TEXT2);
+    g->setCursor(36, cy - 8);
+    g->print(settingsOptionLabel(row, i));
+
+    g->drawFastHLine(0, y + UI_PICK_ROW_H - 1, CONTENT_RIGHT, COL_BORDER);
   }
 }
 

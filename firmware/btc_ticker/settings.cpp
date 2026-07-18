@@ -33,6 +33,48 @@ const char* settingsValueLabel(int row) {
   }
 }
 
+int settingsOptionCount(int row) {
+  switch (row) {
+    case ROW_BRIGHTNESS: return BRI_COUNT;
+    case ROW_FLIP:       return 2;
+    case ROW_PRICE_IV:   return PRICE_IV_COUNT;
+    case ROW_CANDLE_IV:  return CANDLE_IV_COUNT;
+    case ROW_RANGE:      return RANGE_COUNT;
+    case ROW_STYLE:      return STYLE_COUNT;
+    case ROW_NIGHT:      return 2;
+    case ROW_NIGHT_FORCE: return 2;
+    default:             return 0;
+  }
+}
+
+const char* settingsOptionLabel(int row, int idx) {
+  switch (row) {
+    case ROW_BRIGHTNESS: return BRI_LABEL[idx];
+    case ROW_FLIP:       return ONOFF_LABEL[idx];
+    case ROW_PRICE_IV:   return PRICE_IV_LABEL[idx];
+    case ROW_CANDLE_IV:  return CANDLE_IV_LABEL[idx];
+    case ROW_RANGE:      return RANGE_LABEL[idx];
+    case ROW_STYLE:      return STYLE_LABEL[idx];
+    case ROW_NIGHT:      return ONOFF_LABEL[idx];
+    case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
+    default:             return "";
+  }
+}
+
+uint8_t settingsOptionIndex(int row) {
+  switch (row) {
+    case ROW_BRIGHTNESS: return gSettings.briIdx;
+    case ROW_FLIP:       return gSettings.flip;
+    case ROW_PRICE_IV:   return gSettings.priceIvIdx;
+    case ROW_CANDLE_IV:  return gSettings.candleIvIdx;
+    case ROW_RANGE:      return gSettings.rangeIdx;
+    case ROW_STYLE:      return gSettings.styleIdx;
+    case ROW_NIGHT:      return gSettings.nightEn;
+    case ROW_NIGHT_FORCE: return gSettings.nightForce;
+    default:             return 0;
+  }
+}
+
 void settingsLoad(Preferences& p) {
   gSettings.briIdx = p.getUChar("s.bri", 4);
   gSettings.flip = p.getUChar("s.flip", 0);
@@ -72,18 +114,21 @@ void settingsSaveRow(Preferences& p, int row) {
   }
 }
 
-uint8_t settingsCycle(int row) {
+uint8_t settingsSet(int row, uint8_t idx) {
+  if (row < 0 || row >= ROW_COUNT) return 0;
+  if (idx >= (uint8_t)settingsOptionCount(row)) return 0;
+  if (idx == settingsOptionIndex(row)) return 0;
+
   uint8_t mask = 1u << row;
   switch (row) {
-    case ROW_BRIGHTNESS: gSettings.briIdx = (gSettings.briIdx + 1) % BRI_COUNT; break;
-    case ROW_FLIP:       gSettings.flip = gSettings.flip ? 0 : 1; break;
-    case ROW_PRICE_IV:   gSettings.priceIvIdx = (gSettings.priceIvIdx + 1) % PRICE_IV_COUNT; break;
-    case ROW_CANDLE_IV:  gSettings.candleIvIdx = (gSettings.candleIvIdx + 1) % CANDLE_IV_COUNT; break;
-    case ROW_RANGE:      gSettings.rangeIdx = (gSettings.rangeIdx + 1) % RANGE_COUNT; break;
-    case ROW_STYLE:      gSettings.styleIdx = (gSettings.styleIdx + 1) % STYLE_COUNT; break;
-    case ROW_NIGHT:      gSettings.nightEn = gSettings.nightEn ? 0 : 1; break;
-    case ROW_NIGHT_FORCE: gSettings.nightForce = gSettings.nightForce ? 0 : 1; break;
-    default: return 0;
+    case ROW_BRIGHTNESS: gSettings.briIdx = idx; break;
+    case ROW_FLIP:       gSettings.flip = idx; break;
+    case ROW_PRICE_IV:   gSettings.priceIvIdx = idx; break;
+    case ROW_CANDLE_IV:  gSettings.candleIvIdx = idx; break;
+    case ROW_RANGE:      gSettings.rangeIdx = idx; break;
+    case ROW_STYLE:      gSettings.styleIdx = idx; break;
+    case ROW_NIGHT:      gSettings.nightEn = idx; break;
+    case ROW_NIGHT_FORCE: gSettings.nightForce = idx; break;
   }
 
   uint32_t count = RANGE_SEC[gSettings.rangeIdx] / CANDLE_IV_SEC[gSettings.candleIvIdx];
