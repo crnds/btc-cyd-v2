@@ -77,7 +77,8 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 ├── btc_ticker.ino         # LGFX display/touch class, sprite, setup()/loop(),
 │                          #   job scheduler (round-robin + exp backoff), backfill/
 │                          #   gap-repair, WiFi supervisor, daily restart, heap log,
-│                          #   touch (tap/drag), page state, night-mode logic
+│                          #   touch (tap/drag), page state (dashboard /
+│                          #   settings / picker / confirm), night-mode logic
 ├── pins.h                 # CYD pin mapping (see hardware notes below)
 ├── config.example.h       # template; copy to config.h (gitignored, WiFi creds)
 ├── candles.h/.cpp         # CandleRec, candleRing[288], forming candle,
@@ -87,7 +88,8 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 ├── net_price.h/.cpp       # persistent keep-alive TLS session for price polls
 ├── net_klines.h/.cpp      # streaming klines parser (no payload buffering)
 ├── settings.h/.cpp        # settings model, NVS persistence, option pickers
-└── ui.h/.cpp              # all drawing: dashboard, settings pages, night mode
+└── ui.h/.cpp              # all drawing: dashboard, grouped settings list,
+                           #   option pickers, confirm dialog, night mode
 ```
 
 ## Module notes and key designs
@@ -119,17 +121,23 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 - **Display**: full-frame 320x240 sprite in **4-bit palette** mode
   (38,400 bytes vs 153,600 at 16-bit), allocated **before** `WiFi.begin()`
   so the block is contiguous; falls back to drawing directly to the panel if
-  allocation fails. The UI is restricted to the 10 colors in `COL_BASE`
-  (`ui.cpp`) so palette output matches RGB565 pixel-for-pixel;
-  `uiUsePalette()` remaps all `COL_*` constants to palette indices. Night
-  mode swaps the palette to red-only luminance values.
+  allocation fails. The UI is restricted to the 15 colors in `COL_BASE`
+  (`ui.cpp`) so palette output matches RGB565 pixel-for-pixel (a 4-bit
+  palette holds 16 entries — don't exceed that); `uiUsePalette()` remaps
+  all `COL_*` constants to palette indices. Night mode swaps the palette
+  to red-only luminance values.
 - **Settings** (`settings.*`): `gSettings` persisted field-by-field in NVS
   Preferences (namespace `"ticker"`, keys `s.*`), loaded with clamping.
   `settingsSet()` returns a bitmask of changed rows and auto-adjusts invalid
   candle-size x range combos that would exceed `MAX_CANDLES`; the caller
   persists the changed rows and applies side effects (`applySettingChange`
-  in the .ino). Extending the settings page is the intended cheap extension
-  point — add a row enum, option table, labels, and a save case.
+  in the .ino). The settings UI (`ui.cpp`) groups rows under section headers
+  via the `SET_ITEMS` visual model (independent of the `ROW_*` enum order);
+  binary rows (On/Off) toggle in place without opening the picker, and
+  changing the candle size goes through a full-screen confirmation page
+  first because it wipes the candle DB. Extending the settings page is the
+  intended cheap extension point — add a row enum, option table, labels,
+  a `SET_ITEMS` entry, and a save case.
 - **Single-threaded model**: everything runs on the Arduino `loop()` task —
   no locking anywhere; `ui.cpp` reads the candle ring directly between
   mutations. Keep it that way. `loop()` also computes the footer CPU% as an
@@ -145,19 +153,21 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
   `CONTENT_RIGHT` (`SCREEN_W - PAD_RIGHT`, currently 300 of 320px) — on the
   dashboard, the Settings pages, and even the touch-feedback border.
   Right-aligned text, separator lines, and borders stop at `CONTENT_RIGHT`,
-  not `SCREEN_W`. See `ui.cpp` (`drawHeader`, `drawChart`,
+  not `SCREEN_W`. See `ui.cpp` (`drawStatusBar`, `drawChart`,
   `uiRenderSettings`, `uiDrawTouchFlash`).
 - Comment style: dense header comments on every public function explaining
   *why* (hardware gotchas, heap budgets, design rationale), not just what.
   Match this when editing — future maintainers rely on these notes.
-- Indentation is inconsistent by history: `btc_ticker.ino`, `candles.cpp`,
-  and `ui.cpp` (partially) use a flush-left-in-block style inherited from a
-  donor project, while `store.cpp`, `settings.cpp`, and the `net_*` files
-  use normal 2-space indentation. Match the file you're editing; don't
-  reformat wholesale.
-- Settings page layout constants (`UI_SET_*`, hit boxes) live in `ui.h` and
-  are shared between drawing (`ui.cpp`) and touch hit-testing
-  (`btc_ticker.ino`) so they can't drift — keep them in `ui.h`.
+- Indentation is inconsistent by history: `btc_ticker.ino` and
+  `candles.cpp` use a flush-left-in-block style inherited from a
+  donor project, while `store.cpp`, `settings.cpp`, `ui.cpp`, and the
+  `net_*` files use normal 2-space indentation. Match the file you're
+  editing; don't reformat wholesale.
+- Settings page layout lives in `ui.h`/`ui.cpp` and is shared with touch
+  hit-testing (`btc_ticker.ino`) so it can't drift: title/gear/confirm
+  constants (`UI_SET_TITLE_H`, `UI_GEAR_HIT_*`, `UI_CONFIRM_*`) plus the
+  geometry helpers `uiSettingsItemAt()`, `uiSettingsMaxScroll()`, and
+  `uiPickerOptionAt()`. Never duplicate that math in the .ino.
 - Hardware notes baked into the code: the XPT2046 touch controller is NOT on
   the display's SPI bus (dedicated pins, see `pins.h`); the touch calibration
   in the .ino intentionally swaps `y_min/y_max` to un-mirror screen X at

@@ -12,6 +12,10 @@
 #define CYD_TFT_RST  -1
 #define CYD_TFT_BL   21
 
+// On-board LDR (photoresistor divider) for auto-brightness. GPIO34 is ADC1
+// (safe while WiFi is up — ADC2 shares the radio). Input-only pin.
+#define CYD_LDR        34
+
 // The XPT2046 touch controller is NOT on the display's SPI bus — it has its
 // own dedicated pins on this board (classic CYD gotcha).
 #define CYD_TOUCH_SCLK 25

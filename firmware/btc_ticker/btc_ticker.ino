@@ -477,26 +477,86 @@ if (!getLocalTime(&t, 0)) return false;
 return t.tm_hour >= 23 || t.tm_hour < 8;
 }
 
+// Auto-brightness from the on-board LDR (CYD_LDR / GPIO34).
+//
+// The naive version (single analogRead + hard thresholds every render) flashed
+// the screen: ESP32 ADC noise of a few hundred counts around a threshold made
+// the duty hop between adjacent BRI_VAL steps at 1Hz (and more often when
+// touch force-renders). Fix:
+//   1) multi-sample average to kill high-frequency ADC noise
+//   2) hysteresis so a level only changes after the LDR has clearly crossed
+//   3) applyBrightnessDuty only calls setBrightness when the duty changes
+//      (PWM reconfig on every frame can also glitch the backlight)
+//
+// Nominal thresholds (no hyst): <800→5%, <1500→25%, <2200→50%, <3000→75%, else 100%.
+static const int AUTO_BRI_THRESH[] = {800, 1500, 2200, 3000};
+static const int AUTO_BRI_HYST = 200;       // ADC counts of deadband around each edge
+static const int AUTO_BRI_SAMPLES = 8;      // average this many analogRead()s
+static const uint32_t AUTO_BRI_MIN_MS = 1500; // don't re-decide more often than this
+
+static uint8_t gAutoBriLevel = 2;          // last selected level 0..4 (start mid)
+static uint32_t gAutoBriLastMs = 0;
+static uint8_t gLastBriDuty = 0xFF;        // last duty pushed to the panel
+
+static int readLdrAveraged() {
+  long sum = 0;
+  for (int i = 0; i < AUTO_BRI_SAMPLES; i++) {
+    sum += analogRead(CYD_LDR);
+  }
+  return (int)(sum / AUTO_BRI_SAMPLES);
+}
+
+// Map averaged LDR → BRI_VAL index with hysteresis relative to gAutoBriLevel.
+// Rate-limited so touch-forced renders don't re-sample every few ms.
 static uint8_t getAutoBrightnessVal() {
-  int ldr = analogRead(34);
-  if (ldr < 800) return BRI_VAL[0];      // 5%
-  if (ldr < 1500) return BRI_VAL[1];     // 25%
-  if (ldr < 2200) return BRI_VAL[2];     // 50%
-  if (ldr < 3000) return BRI_VAL[3];     // 75%
-  return BRI_VAL[4];                     // 100%
+  uint32_t now = millis();
+  if (gAutoBriLastMs != 0 && (now - gAutoBriLastMs) < AUTO_BRI_MIN_MS) {
+    return BRI_VAL[gAutoBriLevel];
+  }
+  gAutoBriLastMs = now;
+
+  int ldr = readLdrAveraged();
+  uint8_t level = gAutoBriLevel;
+
+  // Climb while clearly above the upward threshold for the next step.
+  while (level < 4 && ldr >= AUTO_BRI_THRESH[level] + AUTO_BRI_HYST) {
+    level++;
+  }
+  // Drop while clearly below the downward threshold for the current step.
+  while (level > 0 && ldr < AUTO_BRI_THRESH[level - 1] - AUTO_BRI_HYST) {
+    level--;
+  }
+
+  if (level != gAutoBriLevel) {
+    Serial.printf("auto-bri: ldr=%d level %u→%u duty=%u\n",
+                  ldr, (unsigned)gAutoBriLevel, (unsigned)level,
+                  (unsigned)BRI_VAL[level]);
+    gAutoBriLevel = level;
+  }
+  return BRI_VAL[gAutoBriLevel];
+}
+
+// Push a PWM duty to the backlight only when it actually changes. Avoids a
+// redundant Light_PWM reconfig every render (and the brief flash that can
+// cause on some CYD backlight drivers).
+static void applyBrightnessDuty(uint8_t duty) {
+  if (duty == gLastBriDuty) return;
+  gfx.setBrightness(duty);
+  gLastBriDuty = duty;
 }
 
 // Dims to 5% brightness while night mode is active, restoring the user's
-// chosen brightness setting the rest of the time. Unconditional (no
-// on/off-edge memo) so a brightness-setting change made *while* night mode
-// is active can't desync from what's actually on the panel.
+// chosen brightness setting the rest of the time. Duty is memoised inside
+// applyBrightnessDuty so a brightness-setting change made *while* night
+// mode is active still takes effect the moment night ends (or the moment
+// the user picks a new fixed level / Auto).
 static void applyNightBrightness(bool on) {
   if (on) {
-    gfx.setBrightness(BRI_VAL[0]);
+    applyBrightnessDuty(BRI_VAL[0]);
   } else if (gSettings.briIdx == 5) {
-    gfx.setBrightness(getAutoBrightnessVal());
+    applyBrightnessDuty(getAutoBrightnessVal());
   } else {
-    gfx.setBrightness(BRI_VAL[gSettings.briIdx]);
+    applyBrightnessDuty(BRI_VAL[gSettings.briIdx]);
   }
 }
 
@@ -556,10 +616,13 @@ prefs.remove("briIdx");  // legacy key, superseded by settings.h's "s.bri"
 settingsLoad(prefs);
 
 gfx.setRotation(gSettings.flip ? 3 : 1);
+// Seed backlight before the first paint. gLastBriDuty starts as 0xFF so the
+// first applyBrightnessDuty always writes; subsequent renderIfDue calls
+// only rewrite when the duty actually changes.
 if (gSettings.briIdx == 5) {
-  gfx.setBrightness(getAutoBrightnessVal());
+  applyBrightnessDuty(getAutoBrightnessVal());
 } else {
-  gfx.setBrightness(BRI_VAL[gSettings.briIdx]);
+  applyBrightnessDuty(BRI_VAL[gSettings.briIdx]);
 }
 candleSeconds = settingsCandleSeconds();
 jobs[0].interval = settingsPriceIntervalMs();

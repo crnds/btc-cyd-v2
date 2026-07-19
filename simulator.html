@@ -2,154 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CYD ESP32 Hardware Simulator — btc-ticker</title>
-  <!-- Google Fonts: Inter for UI, Press Start 2P for LCD screen, JetBrains Mono for Serial Terminal -->
+  <!-- Inter for UI, Press Start 2P for the LCD screen, Fira Code for the serial terminal -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
-  
+
   <style>
+    /* ── DESIGN TOKENS (mirrors the firmware palette in ui.cpp) ── */
     :root {
-      --bg-color: #0b0f19;
-      --panel-bg: rgba(17, 24, 39, 0.65);
-      --panel-border: rgba(255, 255, 255, 0.08);
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --accent: #f59e0b; /* Bitcoin Amber */
-      --accent-rgb: 245, 158, 11;
-      --green: #10b981;
-      --red: #ef4444;
+      --bg: #07090C;
+      --panel: #101418;
+      --panel-2: #15191F;
+      --panel-hi: #212529;
+      --border: #292D31;
+      --border-soft: #1C2126;
+      --text: #F7F7F7;
+      --text-2: #9CA2AD;
+      --text-3: #73828C;
+      --amber: #FFB221;
+      --amber-dim: #5A3D10;
+      --good: #3BDB7B;
+      --bad: #FF5163;
+      --mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+      --radius: 10px;
+      --radius-sm: 6px;
       --pcb-yellow: #d4af37;
       --pcb-dark: #b89025;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { color-scheme: dark; }
 
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-main);
+      background-color: var(--bg);
+      color: var(--text);
       overflow-x: hidden;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      background-image: 
-        radial-gradient(at 0% 0%, rgba(30, 41, 59, 0.5) 0, transparent 50%),
-        radial-gradient(at 50% 0%, rgba(245, 158, 11, 0.08) 0, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(15, 23, 42, 0.8) 0, transparent 50%);
+      background-image: radial-gradient(at 50% -10%, rgba(255, 178, 33, 0.05) 0, transparent 45%);
     }
 
-    /* Header Styling */
+    ::selection { background: rgba(255, 178, 33, 0.28); }
+
+    :focus-visible {
+      outline: 2px solid var(--amber);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* Slim, quiet scrollbars for console / tables */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--panel-hi); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border); background-clip: content-box; }
+
+    /* ── HEADER ── */
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 1.25rem 2rem;
-      border-bottom: 1px solid var(--panel-border);
-      background: rgba(15, 23, 42, 0.4);
-      backdrop-filter: blur(10px);
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      padding: 1rem 1.75rem;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg);
     }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
+    .brand { display: flex; align-items: center; gap: 0.75rem; }
 
     .brand-logo {
       width: 2rem;
       height: 2rem;
-      background: linear-gradient(135deg, var(--accent), #d97706);
-      border-radius: 0.5rem;
+      background: var(--amber);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
       color: #000;
-      box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
     }
 
     .brand h1 {
-      font-size: 1.15rem;
+      font-size: 0.95rem;
       font-weight: 600;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.01em;
     }
 
     .brand p {
-      font-size: 0.75rem;
-      color: var(--text-muted);
+      font-size: 0.72rem;
+      color: var(--text-3);
+      margin-top: 0.1rem;
     }
 
-    .header-status {
-      display: flex;
-      gap: 1.5rem;
-      font-size: 0.8rem;
-    }
+    .header-status { display: flex; gap: 0.5rem; font-size: 0.75rem; flex-wrap: wrap; }
 
     .status-item {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      background: rgba(255, 255, 255, 0.03);
-      padding: 0.35rem 0.75rem;
-      border-radius: 0.375rem;
-      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      padding: 0.4rem 0.8rem;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      color: var(--text-2);
     }
+    .status-item b { color: var(--text); font-weight: 600; }
 
     .status-dot {
       width: 0.5rem;
       height: 0.5rem;
       border-radius: 50%;
-      background-color: var(--text-muted);
+      background-color: var(--text-3);
       display: inline-block;
       transition: background-color 0.3s ease, box-shadow 0.3s ease;
     }
+    .status-dot.active { background-color: var(--good); box-shadow: 0 0 8px rgba(59, 219, 123, 0.7); }
+    .status-dot.error { background-color: var(--bad); box-shadow: 0 0 8px rgba(255, 81, 99, 0.7); }
 
-    .status-dot.active {
-      background-color: var(--green);
-      box-shadow: 0 0 8px var(--green);
-    }
-
-    .status-dot.error {
-      background-color: var(--red);
-      box-shadow: 0 0 8px var(--red);
-    }
-
-    /* Main Grid Layout */
+    /* ── MAIN GRID ── */
     .container {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 2rem;
-      padding: 2rem;
+      gap: 1.5rem;
+      padding: 1.5rem;
       flex: 1;
       max-width: 1400px;
       margin: 0 auto;
       width: 100%;
     }
-
     @media (max-width: 1024px) {
-      .container {
-        grid-template-columns: 1fr;
-      }
+      .container { grid-template-columns: 1fr; }
     }
 
-    /* Glassmorphism Cards */
     .card {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 1rem;
-      padding: 1.5rem;
-      backdrop-filter: blur(16px);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      background: var(--panel);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius);
+      padding: 1.25rem;
       display: flex;
       flex-direction: column;
     }
 
-    /* Left Side: Hardware Board */
+    /* ── CYD BOARD MOCKUP ── */
     .hardware-section {
       display: flex;
       justify-content: center;
@@ -157,17 +155,16 @@
       position: relative;
     }
 
-    /* CYD Board Wrapper */
     .cyd-board {
       width: 380px;
       height: 480px;
       background-color: var(--pcb-yellow);
-      background-image: 
+      background-image:
         radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05) 0%, transparent 80%),
         repeating-linear-gradient(45deg, rgba(184, 144, 37, 0.1) 0, rgba(184, 144, 37, 0.1) 2px, transparent 0, transparent 8px);
-      border-radius: 1.5rem;
+      border-radius: 1.25rem;
       border: 4px solid var(--pcb-dark);
-      box-shadow: 
+      box-shadow:
         0 25px 50px -12px rgba(0, 0, 0, 0.7),
         inset 0 0 15px rgba(255, 255, 255, 0.2);
       position: relative;
@@ -176,10 +173,8 @@
       flex-direction: column;
       align-items: center;
       user-select: none;
-      transition: transform 0.2s ease;
     }
 
-    /* Screw holes in 4 corners */
     .screw-hole {
       width: 18px;
       height: 18px;
@@ -193,13 +188,12 @@
     .screw-bottom-left { bottom: 12px; left: 12px; }
     .screw-bottom-right { bottom: 12px; right: 12px; }
 
-    /* Screen Bezel (LCD module outline) */
     .lcd-bezel {
       width: 320px;
       height: 270px;
-      background: #18181b;
+      background: #101214;
       border-radius: 0.5rem;
-      border: 5px solid #27272a;
+      border: 5px solid #212529;
       box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8), 0 4px 6px rgba(0,0,0,0.3);
       position: relative;
       margin-top: 45px;
@@ -209,26 +203,25 @@
       overflow: hidden;
     }
 
-    /* Screen element itself */
     .lcd-screen {
-      width: 300px; /* Fits 320x240 scaled */
-      height: 225px; /* Aspect 4:3 */
+      width: 300px;
+      height: 225px; /* 4:3 */
       background-color: #000;
       position: relative;
       cursor: pointer;
       overflow: hidden;
       box-shadow: inset 0 0 20px rgba(0,0,0,0.9);
+      touch-action: none;
     }
 
-    /* Actual Canvas */
     #screenCanvas {
       width: 100%;
       height: 100%;
       image-rendering: pixelated;
       transition: filter 0.1s linear;
+      display: block;
     }
 
-    /* Glare effect overlay on LCD */
     .lcd-glare {
       position: absolute;
       top: 0;
@@ -236,32 +229,30 @@
       width: 100%;
       height: 100%;
       pointer-events: none;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.15) 100%);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.15) 100%);
       z-index: 5;
     }
 
-    /* LCD Bezel Text */
     .bezel-text-top {
       position: absolute;
       top: 6px;
-      color: #71717a;
+      color: #73828C;
       font-size: 7px;
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
-      font-family: monospace;
+      font-family: var(--mono);
     }
     .bezel-text-bottom {
       position: absolute;
       bottom: 4px;
-      color: #71717a;
+      color: #73828C;
       font-size: 7px;
       font-weight: 700;
       letter-spacing: 0.15em;
-      font-family: monospace;
+      font-family: var(--mono);
     }
 
-    /* Silkscreen text on Yellow PCB */
     .silkscreen-title {
       position: absolute;
       top: 15px;
@@ -269,7 +260,7 @@
       font-size: 11px;
       color: #27272a;
       letter-spacing: 0.05em;
-      font-family: monospace;
+      font-family: var(--mono);
       text-shadow: 0.5px 0.5px 0 rgba(255,255,255,0.2);
     }
     .silkscreen-sub {
@@ -279,10 +270,9 @@
       font-size: 8px;
       color: #52525b;
       letter-spacing: 0.02em;
-      font-family: monospace;
+      font-family: var(--mono);
     }
 
-    /* ESP32 WROOM module simulated graphic on PCB background */
     .esp32-module {
       position: absolute;
       bottom: 25px;
@@ -308,7 +298,6 @@
       flex: 1;
       background: linear-gradient(135deg, #a1a1aa, #52525b);
       border-radius: 2px;
-      position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -316,12 +305,11 @@
       color: #27272a;
       font-size: 6px;
       font-weight: 800;
-      font-family: monospace;
+      font-family: var(--mono);
       line-height: 1.2;
       text-align: center;
     }
 
-    /* RGB LED on Board */
     .board-led-container {
       position: absolute;
       bottom: 70px;
@@ -331,12 +319,7 @@
       align-items: center;
       gap: 4px;
     }
-    .board-led-label {
-      font-size: 6px;
-      font-family: monospace;
-      font-weight: 700;
-      color: #27272a;
-    }
+    .board-led-label { font-size: 6px; font-family: var(--mono); font-weight: 700; color: #27272a; }
     .board-led {
       width: 12px;
       height: 12px;
@@ -346,24 +329,11 @@
       box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
       transition: background-color 0.2s, box-shadow 0.2s;
     }
-    .board-led.blue {
-      background-color: #3b82f6;
-      box-shadow: 0 0 10px #3b82f6, inset 0 1px 1px white;
-    }
-    .board-led.green {
-      background-color: #10b981;
-      box-shadow: 0 0 10px #10b981, inset 0 1px 1px white;
-    }
-    .board-led.red {
-      background-color: #ef4444;
-      box-shadow: 0 0 10px #ef4444, inset 0 1px 1px white;
-    }
-    .board-led.off {
-      background-color: #71717a;
-      box-shadow: none;
-    }
+    .board-led.blue { background-color: #3b82f6; box-shadow: 0 0 10px #3b82f6, inset 0 1px 1px white; }
+    .board-led.green { background-color: #3BDB7B; box-shadow: 0 0 10px #3BDB7B, inset 0 1px 1px white; }
+    .board-led.red { background-color: #FF5163; box-shadow: 0 0 10px #FF5163, inset 0 1px 1px white; }
+    .board-led.off { background-color: #71717a; box-shadow: none; }
 
-    /* Reset button */
     .reset-btn-container {
       position: absolute;
       bottom: 25px;
@@ -373,12 +343,7 @@
       align-items: center;
       gap: 4px;
     }
-    .reset-btn-label {
-      font-size: 6px;
-      font-family: monospace;
-      font-weight: 700;
-      color: #27272a;
-    }
+    .reset-btn-label { font-size: 6px; font-family: var(--mono); font-weight: 700; color: #27272a; }
     .reset-btn {
       width: 18px;
       height: 18px;
@@ -387,6 +352,7 @@
       border-radius: 50%;
       cursor: pointer;
       box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+      padding: 0;
     }
     .reset-btn:active {
       transform: translateY(1px);
@@ -394,7 +360,6 @@
       background: radial-gradient(circle, #ef4444 20%, #b91c1c 80%);
     }
 
-    /* Ports graphics at the bottom */
     .cyd-micro-usb {
       position: absolute;
       bottom: 0;
@@ -417,203 +382,149 @@
       border-radius: 1px;
     }
 
-    /* Right Side: Config Dashboard */
+    /* ── TABS ── */
     .dashboard-tabs {
       display: flex;
-      border-bottom: 1px solid var(--panel-border);
-      margin-bottom: 1.5rem;
-      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-soft);
+      margin-bottom: 1.25rem;
+      gap: 0.25rem;
     }
 
     .tab-btn {
       background: none;
       border: none;
-      color: var(--text-muted);
-      padding: 0.65rem 1rem;
-      font-size: 0.85rem;
-      font-weight: 500;
+      color: var(--text-3);
+      padding: 0.6rem 0.85rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
       border-bottom: 2px solid transparent;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      transition: color 0.15s ease, border-color 0.15s ease;
+      font-family: 'Inter', sans-serif;
     }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
 
-    .tab-btn:hover {
-      color: var(--text-main);
-    }
+    .tab-content { display: none; flex: 1; flex-direction: column; gap: 1rem; }
+    .tab-content.active { display: flex; }
 
-    .tab-btn.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-
-    .tab-content {
-      display: none;
-      flex: 1;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
-
-    .tab-content.active {
-      display: flex;
-    }
-
-    /* Forms, Toggles & Controls */
+    /* ── CONTROLS ── */
     .control-group {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 0.75rem;
-      padding: 1rem;
+      background: var(--panel-2);
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
     }
 
     .control-title {
-      font-size: 0.8rem;
+      font-size: 0.68rem;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      color: var(--text-3);
       margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .control-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border-soft);
     }
 
     .setting-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 0.75rem;
       margin-bottom: 0.75rem;
     }
-    .setting-row:last-child {
-      margin-bottom: 0;
-    }
+    .setting-row:last-child { margin-bottom: 0; }
 
-    .setting-label {
-      font-size: 0.85rem;
-      font-weight: 500;
-    }
+    .setting-label { font-size: 0.82rem; font-weight: 500; }
+    .setting-desc { font-size: 0.72rem; color: var(--text-3); margin-top: 0.15rem; line-height: 1.4; }
 
-    .setting-desc {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-top: 0.15rem;
-    }
-
-    /* Switch styling */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 44px;
-      height: 24px;
-    }
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
+    /* Switch — same visual language as the on-device toggle */
+    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
       position: absolute;
       cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(255,255,255,0.15);
-      transition: .3s;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: var(--panel-hi);
+      transition: 0.2s;
       border-radius: 24px;
+      border: 1px solid var(--border);
     }
     .slider:before {
       position: absolute;
       content: "";
-      height: 18px;
-      width: 18px;
+      height: 16px;
+      width: 16px;
       left: 3px;
       bottom: 3px;
-      background-color: white;
-      transition: .3s;
+      background-color: var(--text-2);
+      transition: 0.2s;
       border-radius: 50%;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
-    input:checked + .slider {
-      background-color: var(--green);
-    }
-    input:checked + .slider:before {
-      transform: translateX(20px);
-    }
+    input:checked + .slider { background-color: var(--amber); border-color: var(--amber); }
+    input:checked + .slider:before { transform: translateX(18px); background-color: #000; }
+    .switch input:focus-visible + .slider { outline: 2px solid var(--amber); outline-offset: 2px; }
 
-    /* Button and Input Styling */
     .btn {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid var(--panel-border);
-      color: var(--text-main);
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
+      background: var(--panel-hi);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.9rem;
+      border-radius: var(--radius-sm);
       font-weight: 500;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
       justify-content: center;
+      font-family: 'Inter', sans-serif;
     }
-    .btn:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-    .btn-primary {
-      background: linear-gradient(to right, var(--accent), #d97706);
-      border: none;
-      color: #000;
-      font-weight: 600;
-    }
-    .btn-primary:hover {
-      background: linear-gradient(to right, #fbbf24, #f59e0b);
-      box-shadow: 0 0 10px rgba(245,158,11, 0.3);
-    }
+    .btn:hover { border-color: var(--text-3); }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--amber); border-color: var(--amber); color: #000; font-weight: 600; }
+    .btn-primary:hover { background: #FFC14D; border-color: #FFC14D; }
     .btn-red {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: #fca5a5;
+      background: rgba(255, 81, 99, 0.10);
+      border: 1px solid rgba(255, 81, 99, 0.35);
+      color: #FF8A96;
     }
-    .btn-red:hover {
-      background: rgba(239, 68, 68, 0.2);
-    }
+    .btn-red:hover { background: rgba(255, 81, 99, 0.18); border-color: rgba(255, 81, 99, 0.5); }
 
-    .input-text {
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--panel-border);
-      border-radius: 0.375rem;
-      color: var(--text-main);
-      padding: 0.4rem 0.65rem;
-      font-size: 0.85rem;
-      font-family: monospace;
+    .input-text, .select-dropdown {
+      background: #0A0D10;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+      font-size: 0.8rem;
       outline: none;
-      width: 100px;
-      text-align: right;
+      font-family: 'Inter', sans-serif;
     }
-    .input-text:focus {
-      border-color: var(--accent);
-    }
+    .input-text { font-family: var(--mono); width: 100px; text-align: right; }
+    .input-text:focus, .select-dropdown:focus { border-color: var(--amber); }
+    .select-dropdown { cursor: pointer; }
 
-    .select-dropdown {
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--panel-border);
-      border-radius: 0.375rem;
-      color: var(--text-main);
-      padding: 0.4rem 0.65rem;
-      font-size: 0.85rem;
-      outline: none;
-      cursor: pointer;
-    }
-
-    /* Slider Styling */
     .range-slider {
       -webkit-appearance: none;
+      appearance: none;
       width: 100%;
-      height: 6px;
-      border-radius: 3px;
-      background: rgba(255,255,255,0.1);
+      height: 4px;
+      border-radius: 2px;
+      background: var(--panel-hi);
       outline: none;
+      cursor: pointer;
     }
     .range-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
@@ -621,154 +532,175 @@
       width: 16px;
       height: 16px;
       border-radius: 50%;
-      background: var(--accent);
+      background: var(--amber);
       cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      border: none;
     }
+    .range-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--amber);
+      cursor: pointer;
+      border: none;
+    }
+    .range-slider:focus-visible { outline: 2px solid var(--amber); outline-offset: 4px; }
 
     .slider-info {
       display: flex;
       justify-content: space-between;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-top: 0.35rem;
+      font-size: 0.68rem;
+      color: var(--text-3);
+      margin-top: 0.4rem;
     }
 
-    /* Status Grid */
+    /* ── INSPECTOR ── */
     .status-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
+      gap: 0.6rem;
     }
 
     .status-card {
-      background: rgba(0,0,0,0.2);
-      border: 1px solid rgba(255,255,255,0.03);
-      border-radius: 0.5rem;
-      padding: 0.65rem;
+      background: #0B0E12;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
       display: flex;
       flex-direction: column;
-      gap: 0.25rem;
+      gap: 0.3rem;
     }
 
     .status-card-label {
-      font-size: 0.7rem;
-      color: var(--text-muted);
+      font-size: 0.62rem;
+      color: var(--text-3);
       text-transform: uppercase;
-      font-weight: 500;
-    }
-
-    .status-card-val {
-      font-family: monospace;
-      font-size: 0.9rem;
+      letter-spacing: 0.07em;
       font-weight: 600;
     }
 
-    /* Table styles for DB inspector */
+    .status-card-val {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .meter {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--panel-hi);
+      overflow: hidden;
+      margin-top: 0.15rem;
+    }
+    .meter > span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--amber);
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+
+    /* ── CANDLE TABLE ── */
     .table-container {
       max-height: 300px;
       overflow-y: auto;
-      border: 1px solid var(--panel-border);
-      border-radius: 0.5rem;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
     }
     .db-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.75rem;
-      font-family: monospace;
+      font-size: 0.72rem;
+      font-family: var(--mono);
       text-align: left;
     }
     .db-table th {
-      background: rgba(255,255,255,0.04);
+      background: var(--panel-2);
       padding: 0.5rem;
-      color: var(--text-muted);
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 0.62rem;
       position: sticky;
       top: 0;
-      border-bottom: 1px solid var(--panel-border);
+      border-bottom: 1px solid var(--border-soft);
     }
-    .db-table td {
-      padding: 0.4rem 0.5rem;
-      border-bottom: 1px solid rgba(255,255,255,0.03);
-    }
-    .db-table tr:hover {
-      background: rgba(255,255,255,0.02);
-    }
+    .db-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .db-table tr:hover { background: rgba(255,255,255,0.02); }
 
-    /* Bottom Section: Serial Console */
+    /* ── SERIAL CONSOLE ── */
     .serial-section {
       grid-column: 1 / -1;
-      background: #070a13;
-      border: 1px solid var(--panel-border);
-      border-radius: 1rem;
+      background: #05070A;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius);
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
 
     .serial-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: rgba(15, 23, 42, 0.6);
-      padding: 0.75rem 1.5rem;
-      border-bottom: 1px solid var(--panel-border);
+      background: var(--panel);
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border-soft);
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .serial-title {
-      font-size: 0.8rem;
+      font-size: 0.68rem;
       font-weight: 600;
-      font-family: monospace;
-      color: var(--text-muted);
+      font-family: var(--mono);
+      letter-spacing: 0.06em;
+      color: var(--text-3);
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
 
-    .serial-actions {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-    }
+    .serial-actions { display: flex; gap: 0.5rem; align-items: center; }
 
     .serial-search {
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--panel-border);
-      border-radius: 0.25rem;
-      color: var(--text-main);
-      padding: 0.25rem 0.5rem;
-      font-size: 0.75rem;
+      background: #0A0D10;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 0.3rem 0.55rem;
+      font-size: 0.72rem;
       outline: none;
       width: 150px;
+      font-family: var(--mono);
     }
+    .serial-search:focus { border-color: var(--amber); }
 
     .serial-log-container {
       height: 200px;
       overflow-y: auto;
-      padding: 1rem 1.5rem;
-      font-family: 'Fira Code', monospace;
-      font-size: 0.75rem;
-      line-height: 1.5;
-      color: #e4e4e7;
+      padding: 0.75rem 1rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      line-height: 1.6;
+      color: var(--text-2);
     }
 
-    .log-line {
-      margin-bottom: 0.25rem;
-      white-space: pre-wrap;
-    }
+    .log-line { margin-bottom: 0.15rem; white-space: pre-wrap; }
+    .log-time { color: var(--text-3); }
+    .log-level-info { color: var(--good); }
+    .log-level-warning { color: var(--amber); }
+    .log-level-error { color: var(--bad); }
+    .log-level-debug { color: var(--text-3); }
+    .log-module { color: var(--amber); font-weight: 500; }
 
-    .log-time {
-      color: #71717a;
-    }
-
-    .log-level-info { color: #10b981; }
-    .log-level-warning { color: #f59e0b; }
-    .log-level-error { color: #ef4444; }
-    .log-level-debug { color: #8b5cf6; }
-
-    .log-module {
-      color: #3b82f6;
-      font-weight: 500;
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
@@ -779,17 +711,17 @@
     <div class="brand">
       <div class="brand-logo">฿</div>
       <div>
-        <h1>Cheap Yellow Display (CYD) Ticker Simulator</h1>
-        <p>ESP32-2432S028R Hardware Simulation (Thailand ICT-7)</p>
+        <h1>CYD Ticker Simulator</h1>
+        <p>ESP32-2432S028R · 320×240 ILI9341 · Bangkok ICT-7</p>
       </div>
     </div>
     <div class="header-status">
       <div class="status-item">
-        <span class="status-label">WiFi SSID: <b>BUY_BITCOIN</b></span>
+        <span class="status-label">WiFi <b>BUY_BITCOIN</b></span>
         <span id="wifiIndicator" class="status-dot"></span>
       </div>
       <div class="status-item">
-        <span class="status-label">NTP Sync</span>
+        <span class="status-label">NTP</span>
         <span id="ntpIndicator" class="status-dot"></span>
       </div>
       <div class="status-item">
@@ -804,31 +736,24 @@
 
     <!-- Left: Hardware Board -->
     <div class="card hardware-section">
-      <!-- The CYD Board Mockup -->
       <div class="cyd-board" id="cydBoard">
-        <!-- Screw holes in 4 corners -->
         <div class="screw-hole screw-top-left"></div>
         <div class="screw-hole screw-top-right"></div>
         <div class="screw-hole screw-bottom-left"></div>
         <div class="screw-hole screw-bottom-right"></div>
 
-        <!-- Title silkscreen printing -->
         <div class="silkscreen-title">ESP32-2432S028R</div>
         <div class="silkscreen-sub">SMART DISPLAY 320x240</div>
 
-        <!-- LCD Module -->
         <div class="lcd-bezel">
           <div class="bezel-text-top">ILI9341 2.8" TFT</div>
-          <!-- Screen Frame -->
-          <div class="lcd-screen" id="lcdScreen" title="Tap the gear icon in the footer to access Settings; drag settings rows to scroll">
+          <div class="lcd-screen" id="lcdScreen" title="Tap the gear button (bottom right) for Settings; drag the settings list to scroll">
             <canvas id="screenCanvas" width="320" height="240"></canvas>
-            <!-- LCD Glare Overlay -->
             <div class="lcd-glare"></div>
           </div>
           <div class="bezel-text-bottom">RESISTIVE TOUCH CONTROLLER</div>
         </div>
 
-        <!-- Simulated ESP32 module on PCB -->
         <div class="esp32-module">
           <div class="esp32-antenna"></div>
           <div class="esp32-shield">
@@ -837,19 +762,16 @@
           </div>
         </div>
 
-        <!-- Board status RGB LED -->
         <div class="board-led-container">
           <div class="board-led off" id="boardLed"></div>
           <div class="board-led-label">RGB LED</div>
         </div>
 
-        <!-- Reset Button -->
         <div class="reset-btn-container">
-          <button class="reset-btn" id="resetBtn" title="ESP32 Hard Reset"></button>
+          <button class="reset-btn" id="resetBtn" title="ESP32 Hard Reset" aria-label="ESP32 Hard Reset"></button>
           <div class="reset-btn-label">RESET</div>
         </div>
 
-        <!-- Micro USB Port at bottom center -->
         <div class="cyd-micro-usb">
           <div class="cyd-micro-usb-connector"></div>
         </div>
@@ -858,24 +780,23 @@
 
     <!-- Right: Config Dashboard -->
     <div class="card">
-      <div class="dashboard-tabs">
-        <button class="tab-btn active" data-tab="controls">⚡ Controls</button>
-        <button class="tab-btn" data-tab="inspector">🔍 Inspector</button>
-        <button class="tab-btn" data-tab="storage">📁 Storage</button>
-        <button class="tab-btn" data-tab="candles-tab">📈 Candles</button>
+      <div class="dashboard-tabs" role="tablist">
+        <button class="tab-btn active" data-tab="controls" role="tab">Controls</button>
+        <button class="tab-btn" data-tab="inspector" role="tab">Inspector</button>
+        <button class="tab-btn" data-tab="storage" role="tab">Storage</button>
+        <button class="tab-btn" data-tab="candles-tab" role="tab">Candles</button>
       </div>
 
       <!-- TAB: Controls -->
       <div class="tab-content active" id="tab-controls">
-        
-        <!-- Simulation Speed -->
+
         <div class="control-group">
           <div class="control-title">Simulated Clock</div>
           <div class="setting-row">
             <span class="setting-label">Time Accelerator</span>
             <span class="status-card-val" id="timeSpeedVal">1x</span>
           </div>
-          <input type="range" class="range-slider" id="timeSpeedSlider" min="1" max="300" value="1">
+          <input type="range" class="range-slider" id="timeSpeedSlider" min="1" max="300" value="1" aria-label="Time accelerator">
           <div class="slider-info">
             <span>Real-time (1x)</span>
             <span>Fast (60x = 1min/sec)</span>
@@ -883,7 +804,6 @@
           </div>
         </div>
 
-        <!-- WiFi and Networking Controls -->
         <div class="control-group">
           <div class="control-title">Network Conditions</div>
           <div class="setting-row">
@@ -892,7 +812,7 @@
               <div class="setting-desc">Simulate router drops or connection loss</div>
             </div>
             <label class="switch">
-              <input type="checkbox" id="wifiSwitch" checked>
+              <input type="checkbox" id="wifiSwitch" checked aria-label="WiFi connection state">
               <span class="slider"></span>
             </label>
           </div>
@@ -902,39 +822,38 @@
               <div class="setting-desc">Simulate server timeouts or endpoint failure</div>
             </div>
             <label class="switch">
-              <input type="checkbox" id="apiSwitch" checked>
+              <input type="checkbox" id="apiSwitch" checked aria-label="Binance API availability">
               <span class="slider"></span>
             </label>
           </div>
         </div>
 
-        <!-- Price Provider Controls -->
         <div class="control-group">
           <div class="control-title">Market Feed & Simulator</div>
           <div class="setting-row">
             <span class="setting-label">Data Provider</span>
-            <select class="select-dropdown" id="dataProviderSelect">
+            <select class="select-dropdown" id="dataProviderSelect" aria-label="Data provider">
               <option value="live">Live Binance HTTP API</option>
               <option value="mock">Local Trend Generator</option>
             </select>
           </div>
-          
-          <div id="mockControls" style="display:none; margin-top:1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top:0.75rem;">
+
+          <div id="mockControls" style="display:none; margin-top:1rem; border-top: 1px solid var(--border-soft); padding-top:0.75rem;">
             <div class="setting-row">
               <span class="setting-label">Simulated Market Trend</span>
-              <select class="select-dropdown" id="mockTrendSelect">
+              <select class="select-dropdown" id="mockTrendSelect" aria-label="Simulated market trend">
                 <option value="random">Random Walk</option>
                 <option value="bull">Bull Run (Upwards)</option>
                 <option value="bear">Bear Market (Downwards)</option>
                 <option value="flat">Sideways Range</option>
               </select>
             </div>
-            
+
             <div class="setting-row" style="margin-top:0.75rem;">
               <span class="setting-label">Pump/Dump Manual Slider</span>
               <span class="status-card-val" id="manualPriceVal">$98,000</span>
             </div>
-            <input type="range" class="range-slider" id="manualPriceSlider" min="50000" max="150000" step="50" value="98000">
+            <input type="range" class="range-slider" id="manualPriceSlider" min="50000" max="150000" step="50" value="98000" aria-label="Manual simulated price">
             <div class="slider-info">
               <span>$50,000</span>
               <span>Current Simulated Price</span>
@@ -976,18 +895,21 @@
           <div class="status-card">
             <span class="status-card-label">CPU Usage</span>
             <span class="status-card-val" id="cpuVal">8%</span>
+            <div class="meter"><span id="cpuMeter"></span></div>
           </div>
           <div class="status-card">
             <span class="status-card-label">ROM Usage</span>
             <span class="status-card-val" id="romVal">58%</span>
+            <div class="meter"><span id="romMeter"></span></div>
           </div>
           <div class="status-card">
             <span class="status-card-label">RAM Usage</span>
             <span class="status-card-val" id="ramVal">19%</span>
+            <div class="meter"><span id="ramMeter"></span></div>
           </div>
         </div>
 
-        <div class="control-title" style="margin-top: 1rem;">Active Candle Assembly</div>
+        <div class="control-title" style="margin-top: 0.5rem;">Active Candle Assembly</div>
         <div class="status-grid">
           <div class="status-card">
             <span class="status-card-label">Forming Open Epoch</span>
@@ -1018,7 +940,7 @@
         <div class="status-grid" style="margin-bottom:1rem;">
           <div class="status-card">
             <span class="status-card-label">File Name</span>
-            <span class="status-card-val" style="color:var(--accent);">/candles.bin</span>
+            <span class="status-card-val" style="color:var(--amber);">/candles.bin</span>
           </div>
           <div class="status-card">
             <span class="status-card-label">Database Size</span>
@@ -1029,7 +951,7 @@
         <div class="control-group" style="display:flex; flex-direction:column; gap:0.75rem;">
           <div class="setting-row">
             <span class="setting-label">LittleFS Sector Health</span>
-            <span class="status-card-val" style="color:var(--green);" id="fsHealthVal">OK</span>
+            <span class="status-card-val" style="color:var(--good);" id="fsHealthVal">OK</span>
           </div>
           <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
             <button class="btn btn-primary" id="formatFsBtn" style="flex:1;">Mount / Format FS</button>
@@ -1058,7 +980,7 @@
             </thead>
             <tbody id="candlesTableBody">
               <tr>
-                <td colspan="6" style="text-align:center; color:var(--text-muted); padding: 2rem;">No candle data loaded. System starting...</td>
+                <td colspan="6" style="text-align:center; color:var(--text-3); padding: 2rem;">No candle data loaded. System starting...</td>
               </tr>
             </tbody>
           </table>
@@ -1075,9 +997,9 @@
           SERIAL MONITOR @ 115200 BAUD — /dev/cu.usbserial-110
         </div>
         <div class="serial-actions">
-          <input type="text" class="serial-search" id="serialSearchInput" placeholder="Filter logs...">
-          <button class="btn" id="clearTerminalBtn" style="padding: 0.2rem 0.5rem; font-size:0.7rem;">Clear</button>
-          <button class="btn" id="copyLogsBtn" style="padding: 0.2rem 0.5rem; font-size:0.7rem;">Copy</button>
+          <input type="text" class="serial-search" id="serialSearchInput" placeholder="Filter logs..." aria-label="Filter logs">
+          <button class="btn" id="clearTerminalBtn" style="padding: 0.25rem 0.6rem; font-size:0.7rem;">Clear</button>
+          <button class="btn" id="copyLogsBtn" style="padding: 0.25rem 0.6rem; font-size:0.7rem;">Copy</button>
         </div>
       </div>
       <div class="serial-log-container" id="serialLogContainer"></div>
@@ -1092,106 +1014,194 @@
     let CANDLE_SECONDS = 300;
     const NTP_VALID_EPOCH = 1700000000;
 
-    // Colors mimicking LovyanGFX definitions in ui.cpp
+    // Colors mirroring the redesigned firmware palette in ui.cpp (RGB565
+    // decoded to hex). Signal colors only: green/red = market direction,
+    // amber = BTC accent / interactive; structure stays on the neutral ramp.
     const COL_BG       = "#000000";
-    const COL_TEXT     = "#FFFFFF";
-    const COL_TEXT2    = "#9C999C"; // 0x9CD3
-    const COL_GOOD     = "#20CC40"; // 0x2668
-    const COL_BAD      = "#FC1830"; // 0x78C6 or similar
-    const COL_GOOD_DIM = "#108E10"; // 0x1462
-    const COL_BAD_DIM  = "#902420"; // 0x9124
-    const COL_AMBER    = "#FCB400"; // 0xFDA0
-    const COL_BORDER   = "#397139"; // 0x39C7
-    const COL_BW_BULL_DIM = "#808080"; // Mid-gray
+    const COL_TEXT     = "#F7F7F7";
+    const COL_TEXT2    = "#9CA2AD";
+    const COL_GOOD     = "#3BDB7B";
+    const COL_BAD      = "#FF5163";
+    const COL_GOOD_DIM = "#187B42";
+    const COL_BAD_DIM  = "#8B2D3B";
+    const COL_AMBER    = "#FFB221";
+    const COL_BORDER   = "#292D31";
+    const COL_BW_BULL_DIM = "#7B828C";
+    const COL_PANEL    = "#101418";
+    const COL_PANEL_HI = "#212529";
+    const COL_TEXT3    = "#73828C";
+    const COL_GRID     = "#181D21";
+    const COL_AMBER_DIM = "#5A3D10";
 
-    // Settings Constants & Helpers
+    // Settings constants & helpers (mirrors settings.cpp / ui.cpp)
     const SETTINGS_ROW_LABELS = [
       "Brightness", "Flip screen", "Price fetch", "Candle size", "Time range", "Chart style",
-      "Night schedule", "Night mode active", "Range bar"
+      "Night schedule", "Force night mode", "Range bar"
+    ];
+
+    const SETTINGS_ROW_DESC = [
+      "Backlight level. Auto follows ambient light.",
+      "Rotate the screen 180 degrees.",
+      "How often Binance is polled for the price.",
+      "Minutes per candle. Changing clears history.",
+      "Total time shown on the chart.",
+      "Candle colors, monochrome, or a line chart.",
+      "Dim red-only screen from 23:00 to 08:00.",
+      "Keep night mode on, ignoring the schedule.",
+      "Show today's low-to-high position bar."
     ];
 
     const BRI_LABEL = ["5%", "25%", "50%", "75%", "100%", "Auto"];
     const PRICE_IV_LABEL = ["1s", "5s", "10s", "1m", "5m"];
+    const PRICE_IV_MS = [1000, 5000, 10000, 60000, 300000];
     const CANDLE_IV_LABEL = ["5m", "15m", "1h", "4h"];
+    const CANDLE_IV_SEC = [300, 900, 3600, 14400];
     const RANGE_LABEL = ["12h", "24h", "7D"];
-    const STYLE_LABEL = ["Red/Grn", "Blk/Wht", "Line"];
+    const RANGE_SEC = [12 * 3600, 24 * 3600, 7 * 24 * 3600];
+    const STYLE_LABEL = ["Red/Green", "Black/White", "Line"];
     const ONOFF_LABEL = ["Off", "On"];
 
+    // Row enum values (settings.h)
+    const ROW_BRIGHTNESS = 0, ROW_FLIP = 1, ROW_PRICE_IV = 2, ROW_CANDLE_IV = 3,
+          ROW_RANGE = 4, ROW_STYLE = 5, ROW_NIGHT = 6, ROW_NIGHT_FORCE = 7,
+          ROW_RANGEBAR = 8, ROW_COUNT = 9;
+
+    // Grouped settings list model (mirrors SET_ITEMS in ui.cpp). Binary rows
+    // (2 options) toggle in place; wider rows open the picker.
+    const SET_ITEMS = [
+      { header: "MARKET DATA" },
+      { row: ROW_PRICE_IV },
+      { row: ROW_CANDLE_IV },
+      { row: ROW_RANGE },
+      { header: "CHART" },
+      { row: ROW_STYLE },
+      { row: ROW_RANGEBAR },
+      { header: "DISPLAY" },
+      { row: ROW_BRIGHTNESS },
+      { row: ROW_FLIP },
+      { row: ROW_NIGHT },
+      { row: ROW_NIGHT_FORCE },
+    ];
+    const SET_HDR_H = 26;
+    const SET_ROW_H = 40;
+
     const UI_SET_TITLE_H = 30;
-    const UI_SET_ROW_H = 40;
-    const UI_SET_VIEW_H = 240 - UI_SET_TITLE_H; // 210
-    const UI_PICK_ROW_H = 40;
     const UI_BACK_HIT_X1 = 90;
-    const ROW_COUNT = 9;
+    const UI_GEAR_HIT_X0 = 230;
+    const UI_GEAR_HIT_Y0 = 200;
+    const PICK_OPTS_Y = 52;
+    const UI_CONFIRM_Y0 = 168;
+    const UI_CONFIRM_Y1 = 202;
+    const UI_CONFIRM_CANCEL_X0 = 30;
+    const UI_CONFIRM_CANCEL_X1 = 150;
+    const UI_CONFIRM_OK_X0 = 170;
+    const UI_CONFIRM_OK_X1 = 290;
 
     function settingsOptionCount(row) {
       switch (row) {
-        case 0: return 6; // Brightness
-        case 1: return 2; // Flip
-        case 2: return 5; // Price fetch
-        case 3: return 4; // Candle size
-        case 4: return 3; // Time range
-        case 5: return 3; // Chart style
-        case 6: return 2; // Night schedule
-        case 7: return 2; // Night mode active
-        case 8: return 2; // Range bar
+        case ROW_BRIGHTNESS: return 6;
+        case ROW_FLIP: return 2;
+        case ROW_PRICE_IV: return 5;
+        case ROW_CANDLE_IV: return 4;
+        case ROW_RANGE: return 3;
+        case ROW_STYLE: return 3;
+        case ROW_NIGHT: return 2;
+        case ROW_NIGHT_FORCE: return 2;
+        case ROW_RANGEBAR: return 2;
         default: return 0;
       }
     }
 
     function settingsOptionLabel(row, idx) {
       switch (row) {
-        case 0: return BRI_LABEL[idx];
-        case 1: return ONOFF_LABEL[idx];
-        case 2: return PRICE_IV_LABEL[idx];
-        case 3: return CANDLE_IV_LABEL[idx];
-        case 4: return RANGE_LABEL[idx];
-        case 5: return STYLE_LABEL[idx];
-        case 6: return ONOFF_LABEL[idx];
-        case 7: return ONOFF_LABEL[idx];
-        case 8: return ONOFF_LABEL[idx];
+        case ROW_BRIGHTNESS: return BRI_LABEL[idx];
+        case ROW_FLIP: return ONOFF_LABEL[idx];
+        case ROW_PRICE_IV: return PRICE_IV_LABEL[idx];
+        case ROW_CANDLE_IV: return CANDLE_IV_LABEL[idx];
+        case ROW_RANGE: return RANGE_LABEL[idx];
+        case ROW_STYLE: return STYLE_LABEL[idx];
+        case ROW_NIGHT: return ONOFF_LABEL[idx];
+        case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
+        case ROW_RANGEBAR: return ONOFF_LABEL[idx];
         default: return "";
       }
     }
 
     function settingsValueLabel(row, gSettings) {
       switch (row) {
-        case 0: return BRI_LABEL[gSettings.briIdx];
-        case 1: return ONOFF_LABEL[gSettings.flip];
-        case 2: return PRICE_IV_LABEL[gSettings.priceIvIdx];
-        case 3: return CANDLE_IV_LABEL[gSettings.candleIvIdx];
-        case 4: return RANGE_LABEL[gSettings.rangeIdx];
-        case 5: return STYLE_LABEL[gSettings.styleIdx];
-        case 6: return ONOFF_LABEL[gSettings.nightEn];
-        case 7: return ONOFF_LABEL[gSettings.nightForce];
-        case 8: return ONOFF_LABEL[gSettings.rangeBar];
+        case ROW_BRIGHTNESS: return BRI_LABEL[gSettings.briIdx];
+        case ROW_FLIP: return ONOFF_LABEL[gSettings.flip];
+        case ROW_PRICE_IV: return PRICE_IV_LABEL[gSettings.priceIvIdx];
+        case ROW_CANDLE_IV: return CANDLE_IV_LABEL[gSettings.candleIvIdx];
+        case ROW_RANGE: return RANGE_LABEL[gSettings.rangeIdx];
+        case ROW_STYLE: return STYLE_LABEL[gSettings.styleIdx];
+        case ROW_NIGHT: return ONOFF_LABEL[gSettings.nightEn];
+        case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
+        case ROW_RANGEBAR: return ONOFF_LABEL[gSettings.rangeBar];
         default: return "";
       }
     }
 
     function settingsOptionIndex(row, gSettings) {
       switch (row) {
-        case 0: return gSettings.briIdx;
-        case 1: return gSettings.flip;
-        case 2: return gSettings.priceIvIdx;
-        case 3: return gSettings.candleIvIdx;
-        case 4: return gSettings.rangeIdx;
-        case 5: return gSettings.styleIdx;
-        case 6: return gSettings.nightEn;
-        case 7: return gSettings.nightForce;
-        case 8: return gSettings.rangeBar;
+        case ROW_BRIGHTNESS: return gSettings.briIdx;
+        case ROW_FLIP: return gSettings.flip;
+        case ROW_PRICE_IV: return gSettings.priceIvIdx;
+        case ROW_CANDLE_IV: return gSettings.candleIvIdx;
+        case ROW_RANGE: return gSettings.rangeIdx;
+        case ROW_STYLE: return gSettings.styleIdx;
+        case ROW_NIGHT: return gSettings.nightEn;
+        case ROW_NIGHT_FORCE: return gSettings.nightForce;
+        case ROW_RANGEBAR: return gSettings.rangeBar;
         default: return 0;
       }
     }
 
-    // Screen Resolution Constants
+    // Grouped-list geometry (mirrors ui.cpp helpers — shared so drawing and
+    // hit-testing can't drift apart).
+    function setItemTop(i) {
+      let y = UI_SET_TITLE_H;
+      for (let k = 0; k < i; k++) y += SET_ITEMS[k].header ? SET_HDR_H : SET_ROW_H;
+      return y;
+    }
+
+    function settingsMaxScroll() {
+      const total = setItemTop(SET_ITEMS.length) - UI_SET_TITLE_H;
+      return Math.max(0, total - (240 - UI_SET_TITLE_H));
+    }
+
+    function settingsItemAt(scrollPx, ty) {
+      if (ty < UI_SET_TITLE_H) return -1;
+      for (let i = 0; i < SET_ITEMS.length; i++) {
+        const h = SET_ITEMS[i].header ? SET_HDR_H : SET_ROW_H;
+        const y = setItemTop(i) - scrollPx;
+        if (ty >= y && ty < y + h) return SET_ITEMS[i].header ? -1 : SET_ITEMS[i].row;
+      }
+      return -1;
+    }
+
+    function pickerRowH(n) {
+      if (n <= 4) return 40;
+      return Math.floor((240 - PICK_OPTS_Y) / n);
+    }
+
+    function pickerOptionAt(row, ty) {
+      const n = settingsOptionCount(row);
+      if (n < 1 || ty < PICK_OPTS_Y) return -1;
+      const idx = Math.floor((ty - PICK_OPTS_Y) / pickerRowH(n));
+      return idx < n ? idx : -1;
+    }
+
+    // Screen geometry (mirrors ui.cpp)
     const SCREEN_W      = 320;
     const SCREEN_H      = 240;
     const PAD_RIGHT     = 20;
     const CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 300
-    const CHART_X0      = CONTENT_RIGHT - CANDLE_COUNT - 2;  // 10
-    const CHART_Y0      = 84;
-    const CHART_H       = 128;
+    const EDGE          = 4;
+    const CHART_W       = 288;
+    const CHART_Y0      = 92;
+    const CHART_H       = 98;
+    const AXIS_Y        = 190;
 
     // Helper for formatting large numbers with commas
     function fmtCommas(v) {
@@ -1210,11 +1220,10 @@
 
     // Helper for formatting time (ICT Bangkok GMT+7 timezone)
     function getICTDateTime(epochSec) {
-      // Bangkok is UTC+7
       let date = new Date((epochSec + 7 * 3600) * 1000);
       const wdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const mons = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      
+
       const pad = (n) => String(n).padStart(2, '0');
       return {
         hour: pad(date.getUTCHours()),
@@ -1236,6 +1245,7 @@
         this.cursorY = 0;
         this.textSize = 1;
         this.textColor = COL_TEXT;
+        this.nightMode = false;
       }
 
       redOnly(color) {
@@ -1299,6 +1309,11 @@
         this.ctx.fillRect(x, y, w, 1);
       }
 
+      drawFastVLine(x, y, h, color) {
+        this.ctx.fillStyle = this.getColor(color);
+        this.ctx.fillRect(x, y, 1, h);
+      }
+
       drawLine(x0, y0, x1, y1, color) {
         this.ctx.strokeStyle = this.getColor(color);
         this.ctx.lineWidth = 1;
@@ -1313,6 +1328,41 @@
         this.ctx.fillRect(x, y, 1, 1);
       }
 
+      // LovyanGFX drawArc: 0deg at 3 o'clock, positive clockwise (screen
+      // coords, y down) — same convention as canvas arc() with y down.
+      drawArc(x, y, r0, r1, startDeg, endDeg, color) {
+        this.ctx.strokeStyle = this.getColor(color);
+        this.ctx.lineWidth = Math.max(1, r1 - r0 + 1);
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, (r0 + r1) / 2, startDeg * Math.PI / 180, endDeg * Math.PI / 180);
+        this.ctx.stroke();
+      }
+
+      _roundRectPath(x, y, w, h, r) {
+        const c = this.ctx;
+        r = Math.min(r, w / 2, h / 2);
+        c.beginPath();
+        c.moveTo(x + r, y);
+        c.arcTo(x + w, y, x + w, y + h, r);
+        c.arcTo(x + w, y + h, x, y + h, r);
+        c.arcTo(x, y + h, x, y, r);
+        c.arcTo(x, y, x + w, y, r);
+        c.closePath();
+      }
+
+      fillRoundRect(x, y, w, h, r, color) {
+        this.ctx.fillStyle = this.getColor(color);
+        this._roundRectPath(x, y, w, h, r);
+        this.ctx.fill();
+      }
+
+      drawRoundRect(x, y, w, h, r, color) {
+        this.ctx.strokeStyle = this.getColor(color);
+        this.ctx.lineWidth = 1;
+        this._roundRectPath(x + 0.5, y + 0.5, w - 1, h - 1, r);
+        this.ctx.stroke();
+      }
+
       setClipRect(x, y, w, h) {
         this.ctx.save();
         this.ctx.beginPath();
@@ -1325,31 +1375,10 @@
       }
 
       drawWifi(x, y, color) {
-        const c = this.getColor(color);
-        this.ctx.strokeStyle = c;
-        this.ctx.fillStyle = c;
-        this.ctx.lineWidth = 1.2;
-        this.ctx.lineCap = "round";
-
-        // Dot
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, 1.2, 0, Math.PI * 2);
-        this.ctx.fill();
-
-        // Arc 1
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, 5, -Math.PI * 0.75, -Math.PI * 0.25);
-        this.ctx.stroke();
-
-        // Arc 2
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, 9, -Math.PI * 0.75, -Math.PI * 0.25);
-        this.ctx.stroke();
-
-        // Arc 3
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, 13, -Math.PI * 0.75, -Math.PI * 0.25);
-        this.ctx.stroke();
+        this.fillCircle(x, y, 1, color);
+        this.drawArc(x, y, 3, 3, 225, 315, color);
+        this.drawArc(x, y, 6, 6, 225, 315, color);
+        this.drawArc(x, y, 9, 9, 225, 315, color);
       }
 
       drawGear(cx, cy, col) {
@@ -1360,11 +1389,6 @@
         }
         this.fillCircle(cx, cy, 6, col);
         this.fillCircle(cx, cy, 2, COL_BG);
-      }
-
-      drawFastVLine(x, y, h, color) {
-        this.ctx.fillStyle = this.getColor(color);
-        this.ctx.fillRect(x, y, 1, h);
       }
 
       setTextSize(size) {
@@ -1381,24 +1405,23 @@
       }
 
       textWidth(text) {
-        // LovyanGFX Font0 is roughly 6px wide per character per unit size
+        // LovyanGFX default font is 6px wide per character per unit size
         return text.length * 6 * this.textSize;
       }
 
       print(text) {
         this.ctx.fillStyle = this.getColor(this.textColor);
-        // Map size to pixel sizes: size 1 = 8px, size 2 = 16px, size 4 = 32px
         let pixelSize = 8 * this.textSize;
 
         this.ctx.font = `${pixelSize}px "Press Start 2P", monospace`;
         this.ctx.textBaseline = "top";
-        
+
         const charWidth = 6 * this.textSize;
         for (let i = 0; i < text.length; i++) {
           this.ctx.save();
           this.ctx.translate(this.cursorX, this.cursorY);
-          // Press Start 2P is a square 8x8 font. To map to LovyanGFX's 6x8 GLCD layout, 
-          // we scale each character horizontally by 0.75 (6 / 8).
+          // Press Start 2P is a square 8x8 font. To map to LovyanGFX's 6x8
+          // GLCD layout, scale each character horizontally by 0.75 (6 / 8).
           this.ctx.scale(0.75, 1.0);
           this.ctx.fillText(text[i], 0, 0);
           this.ctx.restore();
@@ -1407,19 +1430,36 @@
       }
     }
 
+    // Tracked-caps micro labels (mirrors drawCaps/capsWidth in ui.cpp)
+    function capsWidth(s) {
+      return s.length > 0 ? s.length * 7 - 1 : 0;
+    }
+
+    function drawCaps(g, x, y, s, color) {
+      g.setTextSize(1);
+      g.setTextColor(color);
+      for (let i = 0; i < s.length; i++) {
+        let c = s[i];
+        if (c >= 'a' && c <= 'z') c = c.toUpperCase();
+        g.setCursor(x, y);
+        g.print(c);
+        x += 7;
+      }
+    }
+
     // ── SIMULATOR STATE ENGINE ──
     class ESP32Simulator {
       constructor() {
         this.canvas = document.getElementById("screenCanvas");
         this.gfx = new LovyanGFX(this.canvas);
-        
+
         // System variables
         this.bootTime = Date.now();
         this.simTimeMultiplier = 1;
         // Start simulated time relative to now (matching ICT)
         this.simulatedTimeEpoch = Math.floor(Date.now() / 1000);
         this.realTimeLastTick = Date.now();
-        
+
         this.powerOn = true;
         this.wifiConnected = false;
         this.wifiStatus = "WL_DISCONNECTED";
@@ -1430,7 +1470,7 @@
         this.ramPct = 19;
         this.apiHits = 0;
         this.isFsHealthy = true;
-        
+
         // Price/Feed State
         this.lastPrice = NaN;
         this.changePct = NaN;
@@ -1438,14 +1478,17 @@
         this.dayLow = NaN;
         this.priceOkMs = 0; // Simulated millis() timestamp of last price fetch success
         this.lastLiveFetchTime = 0;
-        
+
         // Settings State
         this.currentPage = "dashboard"; // "dashboard", "settings", "settings_picker"
         this.settingsScroll = 0;
         this.pickerRow = -1;
+        this.confirmIdx = -1;   // >=0 = confirmation page, pending option idx
         this.touchIsDown = false;
         this.pressX = 0;
         this.pressY = 0;
+        this.fingerX = -1;      // live finger position (pressed-state highlights)
+        this.fingerY = -1;
         this.dragging = false;
         this.dragStartScroll = 0;
         this.gSettings = {
@@ -1459,11 +1502,11 @@
           nightForce: 0,
           rangeBar: 1
         };
-        
+
         // Database / RAM Ring Buffer
         this.candleRing = new Array(CANDLE_COUNT).fill(null).map(() => ({ openEpoch: 0, o: 0, h: 0, l: 0, c: 0 }));
         this.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
-        
+
         // Control Switches
         this.wifiSwitch = document.getElementById("wifiSwitch");
         this.apiSwitch = document.getElementById("apiSwitch");
@@ -1471,23 +1514,23 @@
         this.mockTrendSelect = document.getElementById("mockTrendSelect");
         this.manualPriceSlider = document.getElementById("manualPriceSlider");
         this.timeSpeedSlider = document.getElementById("timeSpeedSlider");
-        
+
         // Jobs list (mimicking btc_ticker.ino)
         this.jobs = [
           { name: "price", interval: 1000, next: 0, backoff: 1000, run: () => this.jobPrice() },
           { name: "ntp", interval: 6 * 3600 * 1000, next: 0, backoff: 1000, run: () => this.jobNtp() },
         ];
-        
+
         // Backfill scheduling
         this.backfillDoneOnce = false;
         this.backfillNextMs = 0;
         this.backfillBackoff = 1000;
-        
+
         // Wifi connection timer helper
         this.wifiConnectingSince = 0;
         this.wifiDownSinceMs = 0;
         this.wifiLastRetryMs = 0;
-        
+
         // UI logs list
         this.terminalLogs = [];
       }
@@ -1497,8 +1540,6 @@
         return Math.floor((Date.now() - this.bootTime) * this.simTimeMultiplier);
       }
 
-
-
       log(level, module, text) {
         const uptime = (this.getSimMillis() / 1000).toFixed(3);
         const logLine = {
@@ -1507,19 +1548,19 @@
           module: module,
           text: text
         };
-        
+
         this.terminalLogs.push(logLine);
         if (this.terminalLogs.length > 300) {
           this.terminalLogs.shift();
         }
-        
+
         this.appendLogToUI(logLine);
       }
 
       appendLogToUI(logLine) {
         const container = document.getElementById("serialLogContainer");
         const filter = document.getElementById("serialSearchInput").value.toLowerCase();
-        
+
         const lineText = `[${logLine.time}s] [${logLine.module}] ${logLine.text}`;
         if (filter && !lineText.toLowerCase().includes(filter)) {
           return;
@@ -1527,18 +1568,14 @@
 
         const div = document.createElement("div");
         div.className = "log-line";
-        div.innerHTML = `
-          <span class="log-time">[${logLine.time}s]</span> 
-          <span class="log-module">[${logLine.module}]</span> 
-          <span class="log-level-${logLine.level.toLowerCase()}">${logLine.text}</span>
-        `;
+        div.innerHTML = `<span class="log-time">[${logLine.time}s]</span> <span class="log-module">[${logLine.module}]</span> <span class="log-level-${logLine.level.toLowerCase()}">${logLine.text}</span>`;
         container.appendChild(div);
-        
+
         // Limit DOM items
         while (container.childNodes.length > 300) {
           container.removeChild(container.firstChild);
         }
-        
+
         // Autoscroll
         container.scrollTop = container.scrollHeight;
       }
@@ -1562,7 +1599,7 @@
         this.romPct = 58;
         this.ramPct = 19;
         this.apiHits = 0;
-        
+
         this.lastPrice = NaN;
         this.changePct = NaN;
         this.dayHigh = NaN;
@@ -1574,31 +1611,32 @@
         this.wifiConnectingSince = 0;
         this.wifiDownSinceMs = 0;
         this.wifiLastRetryMs = 0;
-        
+
         this.currentPage = "dashboard";
         this.settingsScroll = 0;
         this.pickerRow = -1;
+        this.confirmIdx = -1;
         this.touchIsDown = false;
         this.dragging = false;
 
         this.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
         this.jobs.forEach(j => { j.next = 0; j.backoff = 1000; });
-        
+
         document.getElementById("serialLogContainer").innerHTML = "";
         this.terminalLogs = [];
-        
+
         this.log("INFO", "SYSTEM", "Powering on Cheap Yellow Display ESP32-D0WD-V3...");
         this.log("INFO", "SYSTEM", "Chip Revision: 3.1. RAM: 327KB DRAM, 4MB External Flash.");
         this.log("INFO", "LGFX", "Initializing ILI9341 display module (SPI Host: VSPI)...");
-        this.log("INFO", "LGFX", "Sprite allocation requested: 16-bit double buffer.");
-        this.log("INFO", "LGFX", "16-bit Frame buffer allocated successfully (150KB contiguous).");
-        this.log("INFO", "LGFX", "Touch controller XPT2046 initialized on SPI bus.");
-        
+        this.log("INFO", "LGFX", "Sprite allocation requested: 4-bit palette frame buffer (38,400 bytes).");
+        this.log("INFO", "LGFX", "Palette frame buffer allocated; 15-color UI palette installed.");
+        this.log("INFO", "LGFX", "Touch controller XPT2046 initialized (dedicated SPI pins).");
+
         this.loadSettings();
-        
+
         // Mount FS
         this.mountLittleFS();
-        
+
         this.render();
       }
 
@@ -1616,7 +1654,7 @@
         // Fields added after an old save was written get their defaults
         // (the firmware's NVS load does the same via per-key defaults)
         if (this.gSettings.rangeBar === undefined) this.gSettings.rangeBar = 1;
-        CANDLE_SECONDS = [300, 900, 3600, 14400][this.gSettings.candleIvIdx];
+        CANDLE_SECONDS = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
         this.applySettingChange(0xFF); // Apply all settings on load
       }
 
@@ -1638,16 +1676,27 @@
         localStorage.setItem("btc_cyd_settings", JSON.stringify(this.gSettings));
       }
 
+      // Mirrors firmware applyNightBrightness: night force→5%, Auto→stable
+      // mid level (firmware uses LDR + hysteresis; we can't sense ambient here),
+      // else fixed BRI_VAL. Only rewrite the canvas filter when the duty changes
+      // so the sim doesn't flash the way the old unconditional setBrightness path did.
       applyBrightness() {
-        let idx = this.gSettings.briIdx;
-        if (this.gfx.nightMode) idx = 0; // Forced to 5% in night mode
-        
-        let displayIdx = idx;
-        if (idx === 5) {
+        const briVal = [13, 64, 128, 191, 255, 0];
+        let displayIdx = this.gSettings.briIdx;
+        if (this.gfx.nightMode) {
+          displayIdx = 0; // Forced to 5% in night mode
+        } else if (displayIdx === 5) {
           displayIdx = 2; // Simulated auto brightness sits at 50%
         }
-        
-        const val = [13, 64, 128, 191, 255, 0][idx];
+
+        const duty = briVal[displayIdx];
+        const labelIdx = this.gSettings.briIdx;
+        document.getElementById("backlightVal").innerText =
+          labelIdx === 5 ? "Auto" : `${labelIdx} (PWM ${briVal[labelIdx]})`;
+
+        if (this._lastBriDuty === duty) return;
+        this._lastBriDuty = duty;
+
         const canvas = document.getElementById("screenCanvas");
         if (displayIdx === 0) {
           canvas.style.filter = "brightness(15%)";
@@ -1660,62 +1709,57 @@
         } else {
           canvas.style.filter = "brightness(100%)";
         }
-        document.getElementById("backlightVal").innerText = idx === 5 ? "Auto" : `${idx} (PWM ${val})`;
       }
 
       settingsSet(row, idx) {
-        if (row < 0 || row >= 8) return 0;
+        if (row < 0 || row >= ROW_COUNT) return 0;
         if (idx >= settingsOptionCount(row)) return 0;
-        
+
         let oldIdx = settingsOptionIndex(row, this.gSettings);
         if (idx === oldIdx) return 0;
 
         let mask = 1 << row;
         switch (row) {
-          case 0: this.gSettings.briIdx = idx; break;
-          case 1: this.gSettings.flip = idx; break;
-          case 2: this.gSettings.priceIvIdx = idx; break;
-          case 3: this.gSettings.candleIvIdx = idx; break;
-          case 4: this.gSettings.rangeIdx = idx; break;
-          case 5: this.gSettings.styleIdx = idx; break;
-          case 6: this.gSettings.nightEn = idx; break;
-          case 7: this.gSettings.nightForce = idx; break;
-          case 8: this.gSettings.rangeBar = idx; break;
+          case ROW_BRIGHTNESS: this.gSettings.briIdx = idx; break;
+          case ROW_FLIP: this.gSettings.flip = idx; break;
+          case ROW_PRICE_IV: this.gSettings.priceIvIdx = idx; break;
+          case ROW_CANDLE_IV: this.gSettings.candleIvIdx = idx; break;
+          case ROW_RANGE: this.gSettings.rangeIdx = idx; break;
+          case ROW_STYLE: this.gSettings.styleIdx = idx; break;
+          case ROW_NIGHT: this.gSettings.nightEn = idx; break;
+          case ROW_NIGHT_FORCE: this.gSettings.nightForce = idx; break;
+          case ROW_RANGEBAR: this.gSettings.rangeBar = idx; break;
         }
 
-        // Adjust range/candle interval if count > 288
-        const CANDLE_IV_SEC = [300, 900, 3600, 14400];
-        const RANGE_SEC = [12 * 3600, 24 * 3600, 7 * 24 * 3600];
+        // Adjust range/candle interval if count > 288 (mirrors settings.cpp)
         let count = RANGE_SEC[this.gSettings.rangeIdx] / CANDLE_IV_SEC[this.gSettings.candleIvIdx];
         if (count > 288) {
-          if (row === 3) { // ROW_CANDLE_IV
+          if (row === ROW_CANDLE_IV) {
             this.gSettings.rangeIdx = 1; // 24h
-            mask |= 1 << 4; // ROW_RANGE
+            mask |= 1 << ROW_RANGE;
           } else {
             this.gSettings.candleIvIdx = 2; // 1h
-            mask |= 1 << 3; // ROW_CANDLE_IV
+            mask |= 1 << ROW_CANDLE_IV;
           }
         }
-        
+
         this.saveSettings();
         this.log("INFO", "TOUCH", `Setting changed: Row ${row} -> Opt ${idx}. Mask: ${mask}`);
         return mask;
       }
 
       applySettingChange(mask) {
-        if (mask & (1 << 1)) {
+        if (mask & (1 << ROW_FLIP)) {
           // Flip screen state saved, render() handles canvas transform automatically
         }
-        if (mask & (1 << 2)) {
-          const PRICE_IV_MS = [1000, 5000, 10000, 60000, 300000];
+        if (mask & (1 << ROW_PRICE_IV)) {
           let priceJob = this.jobs.find(j => j.name === "price");
           if (priceJob) {
             priceJob.interval = PRICE_IV_MS[this.gSettings.priceIvIdx];
             priceJob.next = this.getSimMillis();
           }
         }
-        if (mask & (1 << 3)) {
-          const CANDLE_IV_SEC = [300, 900, 3600, 14400];
+        if (mask & (1 << ROW_CANDLE_IV)) {
           CANDLE_SECONDS = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
           this.candleRing = new Array(288).fill(null).map(() => ({ openEpoch: 0, o: 0, h: 0, l: 0, c: 0 }));
           this.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
@@ -1724,16 +1768,24 @@
           this.backfillNextMs = this.getSimMillis();
           this.log("INFO", "LFS", `Candle interval changed. Resetting database to ${CANDLE_SECONDS}s intervals.`);
         }
-        if (mask & (1 << 4)) {
+        if (mask & (1 << ROW_RANGE)) {
           this.backfillDoneOnce = false;
           this.backfillNextMs = this.getSimMillis();
         }
+      }
+
+      // Pressed-state helper (mirrors pressedIn() in ui.cpp)
+      pressedIn(x0, y0, x1, y1) {
+        return this.touchIsDown && this.fingerX >= x0 && this.fingerX < x1 &&
+               this.fingerY >= y0 && this.fingerY < y1;
       }
 
       handleTouchDown(tx, ty) {
         this.touchIsDown = true;
         this.pressX = tx;
         this.pressY = ty;
+        this.fingerX = tx;
+        this.fingerY = ty;
         this.dragging = false;
         this.dragStartScroll = this.settingsScroll;
         this.render();  // press edge: flash the feedback border immediately
@@ -1741,13 +1793,14 @@
 
       handleTouchMove(tx, ty) {
         if (!this.touchIsDown) return;
+        this.fingerX = tx;
+        this.fingerY = ty;
         let dy = ty - this.pressY;
         if (!this.dragging && Math.abs(dy) >= 10) {
           this.dragging = true;
         }
         if (this.dragging && this.currentPage === "settings" && this.pickerRow < 0) {
-          const listH = ROW_COUNT * UI_SET_ROW_H;
-          const maxScroll = listH - UI_SET_VIEW_H;
+          const maxScroll = settingsMaxScroll();
           this.settingsScroll = this.dragStartScroll - dy;
           if (this.settingsScroll < 0) this.settingsScroll = 0;
           if (this.settingsScroll > maxScroll) this.settingsScroll = maxScroll;
@@ -1765,12 +1818,30 @@
 
       handleTap(tx, ty) {
         if (this.currentPage === "dashboard") {
-          // Gear hit bounds: bottom-right corner (tx >= 230, ty >= 200)
-          if (tx >= 230 && ty >= 200) {
+          // Gear hit bounds: bottom-right corner
+          if (tx >= UI_GEAR_HIT_X0 && ty >= UI_GEAR_HIT_Y0) {
             this.currentPage = "settings";
             this.settingsScroll = 0;
             this.pickerRow = -1;
+            this.confirmIdx = -1;
             this.render();
+          }
+          return;
+        }
+
+        // Confirmation page (destructive change pending) — modal
+        if (this.confirmIdx >= 0 && this.pickerRow >= 0) {
+          if (ty >= UI_CONFIRM_Y0 && ty < UI_CONFIRM_Y1) {
+            if (tx >= UI_CONFIRM_OK_X0 && tx < UI_CONFIRM_OK_X1) {
+              let mask = this.settingsSet(this.pickerRow, this.confirmIdx);
+              this.applySettingChange(mask);
+              this.confirmIdx = -1;
+              this.pickerRow = -1;
+              this.render();
+            } else if (tx >= UI_CONFIRM_CANCEL_X0 && tx < UI_CONFIRM_CANCEL_X1) {
+              this.confirmIdx = -1;  // back to the picker, nothing changed
+              this.render();
+            }
           }
           return;
         }
@@ -1784,15 +1855,23 @@
             }
             return;
           }
-          let n = settingsOptionCount(this.pickerRow);
-          let rowH = (n > 5) ? Math.floor(UI_SET_VIEW_H / n) : UI_PICK_ROW_H;
-          let idx = Math.floor((ty - UI_SET_TITLE_H) / rowH);
-          if (idx < n) {
-            let mask = this.settingsSet(this.pickerRow, idx);
-            this.applySettingChange(mask);
-            this.currentPage = "settings";
-            this.pickerRow = -1;
-            this.render();
+          let idx = pickerOptionAt(this.pickerRow, ty);
+          if (idx >= 0) {
+            if (idx === settingsOptionIndex(this.pickerRow, this.gSettings)) {
+              this.currentPage = "settings";  // re-tapped current: just close
+              this.pickerRow = -1;
+              this.render();
+            } else if (this.pickerRow === ROW_CANDLE_IV) {
+              // Destructive (wipes ring + flash DB) — confirm first
+              this.confirmIdx = idx;
+              this.render();
+            } else {
+              let mask = this.settingsSet(this.pickerRow, idx);
+              this.applySettingChange(mask);
+              this.currentPage = "settings";
+              this.pickerRow = -1;
+              this.render();
+            }
           }
           return;
         }
@@ -1805,10 +1884,16 @@
             }
             return;
           }
-          let row = Math.floor((ty - UI_SET_TITLE_H + this.settingsScroll) / UI_SET_ROW_H);
-          if (row < ROW_COUNT) {
-            this.currentPage = "settings_picker";
-            this.pickerRow = row;
+          let row = settingsItemAt(this.settingsScroll, ty);
+          if (row >= 0) {
+            if (settingsOptionCount(row) === 2) {
+              // Binary setting: the row IS the switch — flip in place
+              let mask = this.settingsSet(row, 1 - settingsOptionIndex(row, this.gSettings));
+              this.applySettingChange(mask);
+            } else {
+              this.currentPage = "settings_picker";
+              this.pickerRow = row;
+            }
             this.render();
           }
         }
@@ -1816,13 +1901,13 @@
 
       mountLittleFS() {
         this.log("INFO", "LFS", "Mounting LittleFS filesystem... OK");
-        
+
         if (!this.isFsHealthy) {
           this.log("ERROR", "LFS", "LittleFS mount failed (corrupted sectors). Reformatting...");
           this.wipeDb();
           this.isFsHealthy = true;
           document.getElementById("fsHealthVal").innerText = "OK";
-          document.getElementById("fsHealthVal").style.color = "var(--green)";
+          document.getElementById("fsHealthVal").style.color = "var(--good)";
           this.log("INFO", "LFS", "Reformat OK. Mounted blank filesystem.");
           return;
         }
@@ -1923,7 +2008,10 @@
         document.getElementById("cpuVal").innerText = this.cpuPct + "%";
         document.getElementById("romVal").innerText = this.romPct + "%";
         document.getElementById("ramVal").innerText = this.ramPct + "%";
-        
+        document.getElementById("cpuMeter").style.width = this.cpuPct + "%";
+        document.getElementById("romMeter").style.width = this.romPct + "%";
+        document.getElementById("ramMeter").style.width = this.ramPct + "%";
+
         // Render screen double buffer
         this.render();
       }
@@ -1982,11 +2070,11 @@
             this.log("WARNING", "WIFI", "WiFi Connection lost (WL_CONNECTION_LOST).");
             this.updateInspectorUI();
           }
-          
+
           if (this.wifiDownSinceMs === 0) {
             this.wifiDownSinceMs = nowMs;
           }
-          
+
           const downDuration = nowMs - this.wifiDownSinceMs;
           if (downDuration > 10 * 60 * 1000) {
             this.log("ERROR", "SYSTEM", "WiFi down > 10 minutes. Triggering Watchdog Reboot...");
@@ -2017,7 +2105,7 @@
         for (let i = 0; i < N; i++) {
           let idx = (rrStart + i) % N;
           let j = this.jobs[idx];
-          
+
           if (nowMs < j.next) continue;
 
           // Run the job
@@ -2056,16 +2144,15 @@
         if (!this.wifiConnected) return;
         if (this.simulatedTimeEpoch < NTP_VALID_EPOCH) return;
 
-        let gapCount = 0;
         let needGap = this.candlesNeedGapRepair();
-        
+
         if (this.backfillDoneOnce && !needGap) return;
 
         const nowMs = this.getSimMillis();
         if (nowMs < this.backfillNextMs) return;
 
         const limit = this.backfillDoneOnce ? Math.min(CANDLE_COUNT, this.getGapCount() + 1) : CANDLE_COUNT;
-        
+
         this.log("INFO", "NET", `Executing klines backfill (limit=${limit}). Releasing Price socket...`);
         this.apiHits++;
         document.getElementById("apiHitsVal").innerText = this.apiHits;
@@ -2081,13 +2168,13 @@
               this.candlesSetClosed(klines[i]);
             }
             this.candlesSeedForming(klines[klines.length - 1]);
-            
+
             this.log("INFO", "NET", `Backfill loaded: ${klines.length} candles (limit=${limit})`);
             this.backfillDoneOnce = true;
             this.backfillBackoff = 1000;
             this.backfillNextMs = this.getSimMillis();
             document.getElementById("apiIndicator").className = "status-dot active";
-            
+
             // Build the candle table
             this.rebuildCandleTableUI();
           }
@@ -2140,7 +2227,7 @@
               this.dayHigh = parseFloat(data.highPrice);
               this.dayLow = parseFloat(data.lowPrice);
               this.priceOkMs = this.getSimMillis();
-              
+
               document.getElementById("apiIndicator").className = "status-dot active";
             })
             .catch(err => {
@@ -2151,9 +2238,9 @@
           // Simulated Local Trend Generator
           const sliderVal = parseFloat(this.manualPriceSlider.value);
           const trend = this.mockTrendSelect.value;
-          
+
           let currentPrice = isNaN(this.lastPrice) ? sliderVal : this.lastPrice;
-          
+
           // Generate trend variations
           let change = (Math.random() - 0.5) * 50; // Random fluctuation +/- 25 USD
           if (trend === "bull") {
@@ -2164,11 +2251,11 @@
             // Revert back towards selected slider price
             change += (sliderVal - currentPrice) * 0.05;
           }
-          
+
           this.lastPrice = currentPrice + change;
           this.manualPriceSlider.value = Math.floor(this.lastPrice);
           document.getElementById("manualPriceVal").innerText = "$" + fmtCommas(this.lastPrice);
-          
+
           if (isNaN(this.changePct)) this.changePct = 0.0;
           this.changePct += (change / this.lastPrice) * 100;
 
@@ -2186,11 +2273,11 @@
       async fetchKlines(limit) {
         if (this.dataProviderSelect.value === "live" && this.apiSwitch.checked) {
           try {
-            const intervalStr = ["5m", "15m", "1h", "4h"][this.gSettings.candleIvIdx];
+            const intervalStr = CANDLE_IV_LABEL[this.gSettings.candleIvIdx];
             const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${intervalStr}&limit=${limit}`);
             if (!res.ok) throw new Error("HTTP code " + res.status);
             const data = await res.json();
-            
+
             return data.map(item => ({
               openEpoch: Math.floor(item[0] / 1000),
               o: parseFloat(item[1]),
@@ -2207,18 +2294,18 @@
           let endPrice = isNaN(this.lastPrice) ? parseFloat(this.manualPriceSlider.value) : this.lastPrice;
           let currentEpoch = Math.floor(this.simulatedTimeEpoch / CANDLE_SECONDS) * CANDLE_SECONDS;
           let klines = [];
-          
+
           for (let i = 0; i < limit; i++) {
             let offset = (limit - 1 - i) * CANDLE_SECONDS;
             let epoch = currentEpoch - offset;
-            
+
             // Random walk backwards to construct O/H/L/C
             let c = endPrice;
             let change = (Math.random() - 0.5) * 200;
             let o = c - change;
             let h = Math.max(o, c) + Math.random() * 100;
             let l = Math.min(o, c) - Math.random() * 100;
-            
+
             klines.push({ openEpoch: epoch, o, h, l, c });
             endPrice = o; // walk backward
           }
@@ -2250,79 +2337,108 @@
           this.formingCandle.c = price;
           this.updateInspectorUI();
         } else {
-          // Simulated 5-minute boundary close!
+          // Simulated boundary close!
           const closedCandle = { ...this.formingCandle };
           this.candlesSetClosed(closedCandle);
-          
+
           const dt = getICTDateTime(closedCandle.openEpoch);
           this.log("INFO", "CANDLE", `Closed candle at [${dt.hour}:${dt.minute}]: O=${closedCandle.o.toFixed(0)} H=${closedCandle.h.toFixed(0)} L=${closedCandle.l.toFixed(0)} C=${closedCandle.c.toFixed(0)}`);
-          
+
           // Open next candle
           this.formingCandle.openEpoch = currentBucket * CANDLE_SECONDS;
           this.formingCandle.o = price;
           this.formingCandle.h = price;
           this.formingCandle.l = price;
           this.formingCandle.c = price;
-          
+
           this.updateInspectorUI();
           this.rebuildCandleTableUI();
         }
       }
 
+      // ── SETTINGS PAGES (mirrors ui.cpp) ──
       drawSettingsTitle(title) {
         const g = this.gfx;
         g.setTextSize(2);
-        g.setTextColor(COL_TEXT);
-        g.setCursor(28, Math.floor((UI_SET_TITLE_H - 16) / 2));
-        g.print(title);
-
-        // Left arrow "<" back button
         g.setTextColor(COL_AMBER);
-        g.setCursor(8, Math.floor((UI_SET_TITLE_H - 16) / 2));
+        g.setCursor(8, 7);
         g.print("<");
+        g.setTextColor(COL_TEXT);
+        g.setCursor(28, 7);
+        g.print(title);
+        g.drawFastHLine(0, UI_SET_TITLE_H - 1, CONTENT_RIGHT, COL_GRID);
+      }
 
-        g.drawFastHLine(0, UI_SET_TITLE_H - 1, CONTENT_RIGHT, COL_BORDER);
+      drawToggle(x, y, on) {
+        const g = this.gfx;
+        if (on) {
+          g.fillRoundRect(x, y, 30, 16, 8, COL_AMBER);
+          g.fillCircle(x + 22, y + 8, 5, COL_BG);
+        } else {
+          g.fillRoundRect(x, y, 30, 16, 8, COL_PANEL_HI);
+          g.fillCircle(x + 8, y + 8, 5, COL_TEXT2);
+        }
       }
 
       renderSettings() {
         const g = this.gfx;
         g.fillScreen(COL_BG);
 
-        // Clip rows under fixed title bar
+        // Clip rows under the fixed title bar
         g.setClipRect(0, UI_SET_TITLE_H, SCREEN_W, SCREEN_H - UI_SET_TITLE_H);
 
-        for (let i = 0; i < ROW_COUNT; i++) {
-          let y = UI_SET_TITLE_H + i * UI_SET_ROW_H - this.settingsScroll;
-          if (y + UI_SET_ROW_H <= UI_SET_TITLE_H || y >= SCREEN_H) continue;
+        for (let i = 0; i < SET_ITEMS.length; i++) {
+          const item = SET_ITEMS[i];
+          const isHdr = !!item.header;
+          const h = isHdr ? SET_HDR_H : SET_ROW_H;
+          const y = setItemTop(i) - this.settingsScroll;
+          if (y + h <= UI_SET_TITLE_H || y >= SCREEN_H) continue;
 
+          if (isHdr) {
+            drawCaps(g, 12, y + 10, item.header, COL_TEXT3);
+            const lx = 12 + capsWidth(item.header) + 8;
+            g.drawFastHLine(lx, y + 13, CONTENT_RIGHT - lx, COL_GRID);
+            continue;
+          }
+
+          const row = item.row;
+          if (this.pressedIn(0, y, CONTENT_RIGHT, y + h)) {
+            g.fillRect(0, y, CONTENT_RIGHT, h, COL_PANEL_HI);
+          }
+
+          // Label secondary, value primary (the value is the information)
           g.setTextSize(1);
-          g.setTextColor(COL_TEXT);
-          g.setCursor(12, y + Math.floor((UI_SET_ROW_H - 8) / 2));
-          g.print(SETTINGS_ROW_LABELS[i]);
-
-          g.setTextSize(2);
-          let chevX = CONTENT_RIGHT - 10 - g.textWidth(">");
           g.setTextColor(COL_TEXT2);
-          g.setCursor(chevX, y + Math.floor((UI_SET_ROW_H - 16) / 2));
-          g.print(">");
+          g.setCursor(12, y + Math.floor((SET_ROW_H - 8) / 2));
+          g.print(SETTINGS_ROW_LABELS[row]);
 
-          const val = settingsValueLabel(i, this.gSettings);
-          let vw = g.textWidth(val);
-          g.setTextColor(COL_AMBER);
-          g.setCursor(chevX - 8 - vw, y + Math.floor((UI_SET_ROW_H - 16) / 2));
-          g.print(val);
+          if (settingsOptionCount(row) === 2) {
+            // Binary setting: toggle switch, taps flip it in place
+            this.drawToggle(CONTENT_RIGHT - 42, y + 12, settingsOptionIndex(row, this.gSettings) === 1);
+          } else {
+            const val = settingsValueLabel(row, this.gSettings);
+            const vw = g.textWidth(val);
+            const chevX = CONTENT_RIGHT - 16;
+            g.setTextColor(COL_AMBER);
+            g.setCursor(chevX, y + Math.floor((SET_ROW_H - 8) / 2));
+            g.print(">");
+            g.setTextColor(COL_TEXT);
+            g.setCursor(chevX - 8 - vw, y + Math.floor((SET_ROW_H - 8) / 2));
+            g.print(val);
+          }
 
-          g.drawFastHLine(0, y + UI_SET_ROW_H - 1, CONTENT_RIGHT, COL_BORDER);
+          g.drawFastHLine(12, y + SET_ROW_H - 1, CONTENT_RIGHT - 12, COL_GRID);
         }
 
-        // Scrollbar thumb
-        let listH = ROW_COUNT * UI_SET_ROW_H;
-        if (listH > UI_SET_VIEW_H) {
-          let thumbH = Math.floor(UI_SET_VIEW_H * UI_SET_VIEW_H / listH);
+        // Scrollbar thumb, flush against CONTENT_RIGHT
+        const maxScroll = settingsMaxScroll();
+        if (maxScroll > 0) {
+          const viewH = SCREEN_H - UI_SET_TITLE_H;
+          const listH = viewH + maxScroll;
+          let thumbH = Math.floor(viewH * viewH / listH);
           if (thumbH < 12) thumbH = 12;
-          let maxScroll = listH - UI_SET_VIEW_H;
-          let thumbY = UI_SET_TITLE_H + Math.floor((UI_SET_VIEW_H - thumbH) * this.settingsScroll / maxScroll);
-          g.fillRect(CONTENT_RIGHT - 3, thumbY, 3, thumbH, COL_TEXT2);
+          const thumbY = UI_SET_TITLE_H + Math.floor((viewH - thumbH) * this.settingsScroll / maxScroll);
+          g.fillRect(CONTENT_RIGHT - 2, thumbY, 2, thumbH, COL_BORDER);
         }
 
         g.clearClipRect();
@@ -2335,35 +2451,107 @@
         g.fillScreen(COL_BG);
         this.drawSettingsTitle(SETTINGS_ROW_LABELS[row]);
 
-        let n = settingsOptionCount(row);
-        let cur = settingsOptionIndex(row, this.gSettings);
-        let rowH = (n > 5) ? Math.floor(UI_SET_VIEW_H / n) : UI_PICK_ROW_H;
-        for (let i = 0; i < n; i++) {
-          let y = UI_SET_TITLE_H + i * rowH;
-          let cy = y + Math.floor(rowH / 2);
-          let sel = (i === cur);
+        g.setTextSize(1);
+        g.setTextColor(COL_TEXT2);
+        g.setCursor(12, 38);
+        g.print(SETTINGS_ROW_DESC[row]);
 
-          g.drawCircle(18, cy, 6, sel ? COL_AMBER : COL_TEXT2);
-          if (sel) g.fillCircle(18, cy, 3, COL_AMBER);
+        const n = settingsOptionCount(row);
+        const cur = settingsOptionIndex(row, this.gSettings);
+        const rowH = pickerRowH(n);
+        for (let i = 0; i < n; i++) {
+          const y = PICK_OPTS_Y + i * rowH;
+          const cy = y + Math.floor(rowH / 2);
+          const sel = (i === cur);
+
+          if (sel) {
+            g.fillRect(0, y, CONTENT_RIGHT, rowH, COL_PANEL_HI);
+          } else if (this.pressedIn(0, y, CONTENT_RIGHT, y + rowH)) {
+            g.fillRect(0, y, CONTENT_RIGHT, rowH, COL_PANEL);
+          }
+
+          if (sel) {
+            g.drawCircle(20, cy, 6, COL_AMBER);
+            g.fillCircle(20, cy, 3, COL_AMBER);
+          } else {
+            g.drawCircle(20, cy, 6, COL_TEXT3);
+          }
 
           g.setTextSize(2);
           g.setTextColor(sel ? COL_TEXT : COL_TEXT2);
-          g.setCursor(36, cy - 8);
+          g.setCursor(40, cy - 8);
           g.print(settingsOptionLabel(row, i));
 
-          g.drawFastHLine(0, y + rowH - 1, CONTENT_RIGHT, COL_BORDER);
+          g.drawFastHLine(12, y + rowH - 1, CONTENT_RIGHT - 12, COL_GRID);
         }
       }
 
+      renderConfirm() {
+        const g = this.gfx;
+        const row = this.pickerRow;
+        const idx = this.confirmIdx;
+        g.fillScreen(COL_BG);
+
+        // Warning glyph
+        g.drawCircle(160, 56, 16, COL_AMBER);
+        g.setTextSize(2);
+        g.setTextColor(COL_AMBER);
+        g.setCursor(154, 48);
+        g.print("!");
+
+        const title = "CLEAR CHART HISTORY?";
+        g.setTextColor(COL_TEXT);
+        g.setCursor(Math.floor((SCREEN_W - g.textWidth(title)) / 2), 84);
+        g.print(title);
+
+        g.setTextSize(1);
+        g.setTextColor(COL_TEXT2);
+        const l1 = "Changing the candle size erases the";
+        const l2 = "stored chart history and re-downloads it.";
+        g.setCursor(Math.floor((SCREEN_W - g.textWidth(l1)) / 2), 106);
+        g.print(l1);
+        g.setCursor(Math.floor((SCREEN_W - g.textWidth(l2)) / 2), 116);
+        g.print(l2);
+
+        // The pending change, e.g. "5m -> 15m"
+        const preview = `${settingsOptionLabel(row, settingsOptionIndex(row, this.gSettings))} -> ${settingsOptionLabel(row, idx)}`;
+        g.setTextSize(2);
+        g.setTextColor(COL_AMBER);
+        g.setCursor(Math.floor((SCREEN_W - g.textWidth(preview)) / 2), 132);
+        g.print(preview);
+
+        // Buttons (hit zones shared with the tap handler via UI_CONFIRM_*)
+        if (this.pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0, UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1)) {
+          g.fillRoundRect(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
+                          UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
+                          UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, COL_PANEL_HI);
+        }
+        g.drawRoundRect(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
+                        UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
+                        UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, COL_BORDER);
+        g.setTextSize(2);
+        g.setTextColor(COL_TEXT);
+        g.setCursor(UI_CONFIRM_CANCEL_X0 + 24, UI_CONFIRM_Y0 + 9);
+        g.print("CANCEL");
+
+        const okFill = this.pressedIn(UI_CONFIRM_OK_X0, UI_CONFIRM_Y0,
+                                      UI_CONFIRM_OK_X1, UI_CONFIRM_Y1) ? COL_AMBER_DIM : COL_AMBER;
+        g.fillRoundRect(UI_CONFIRM_OK_X0, UI_CONFIRM_Y0,
+                        UI_CONFIRM_OK_X1 - UI_CONFIRM_OK_X0,
+                        UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, okFill);
+        g.setTextColor(COL_BG);
+        g.setCursor(UI_CONFIRM_OK_X0 + 18, UI_CONFIRM_Y0 + 9);
+        g.print("CONFIRM");
+      }
+
       // ── LOVYANGFX FRAME RENDERER ──
-      // Touch feedback border, drawn for one frame every time a touch
-      // registers (mirrors uiDrawTouchFlash in ui.cpp): 10px on all 4 sides,
-      // right side stopping at CONTENT_RIGHT (the 20px right-edge padding).
+      // Touch feedback border (mirrors uiDrawTouchFlash in ui.cpp): 3px on
+      // all 4 sides, right side stopping at CONTENT_RIGHT.
       drawTouchFlash(g) {
-        g.fillRect(0, 0, CONTENT_RIGHT, 10, COL_AMBER);              // top
-        g.fillRect(0, SCREEN_H - 10, CONTENT_RIGHT, 10, COL_AMBER);  // bottom
-        g.fillRect(0, 0, 10, SCREEN_H, COL_AMBER);                   // left
-        g.fillRect(CONTENT_RIGHT - 10, 0, 10, SCREEN_H, COL_AMBER);  // right
+        g.fillRect(0, 0, CONTENT_RIGHT, 3, COL_AMBER);             // top
+        g.fillRect(0, SCREEN_H - 3, CONTENT_RIGHT, 3, COL_AMBER);  // bottom
+        g.fillRect(0, 0, 3, SCREEN_H, COL_AMBER);                  // left
+        g.fillRect(CONTENT_RIGHT - 3, 0, 3, SCREEN_H, COL_AMBER);  // right
       }
 
       render() {
@@ -2374,15 +2562,19 @@
           g.ctx.rotate(Math.PI);
         }
 
-        if (this.currentPage === "settings") {
+        if (this.confirmIdx >= 0 && this.pickerRow >= 0) {
+          this.renderConfirm();
+        } else if (this.currentPage === "settings") {
           this.renderSettings();
         } else if (this.currentPage === "settings_picker") {
           this.renderSettingsPicker();
         } else {
-          // 1. Clear Screen
+          // ── DASHBOARD (mirrors uiRender in ui.cpp) ──
           g.fillScreen(COL_BG);
-          
-          // 2. Draw Header
+
+          // 1. Status bar: asset tag left, clock center, date + wifi right
+          drawCaps(g, EDGE, 8, "BTC/USDT", COL_TEXT3);
+
           const dt = getICTDateTime(this.simulatedTimeEpoch);
           const haveTime = this.simulatedTimeEpoch > NTP_VALID_EPOCH;
           if (haveTime) {
@@ -2394,121 +2586,108 @@
             const w1 = g.textWidth(timeStr);
             g.setTextSize(1);
             const w2 = g.textWidth(secStr);
-            const totalW = w1 + w2;
-            const startX = Math.floor((SCREEN_W - totalW) / 2);
+            const startX = Math.floor((SCREEN_W - w1 - w2) / 2);
 
-            // Draw time HH:MM
             g.setTextSize(2);
             g.setTextColor(COL_TEXT);
             g.setCursor(startX, 4);
             g.print(timeStr);
 
-            // Draw seconds :SS
             g.setTextSize(1);
-            g.setTextColor(COL_TEXT2);
-            g.setCursor(startX + w1, 10);
+            g.setTextColor(COL_TEXT3);
+            g.setCursor(startX + w1, 11);
             g.print(secStr);
 
-            // Draw date right-aligned
             g.setTextSize(1);
             g.setTextColor(COL_TEXT2);
             const dateW = g.textWidth(dateStr);
-            g.setCursor(CONTENT_RIGHT - dateW, 10);
+            g.setCursor(CONTENT_RIGHT - 24 - dateW, 8);  // 24px reserved for wifi
             g.print(dateStr);
           } else {
             g.setTextSize(2);
-            g.setTextColor(COL_TEXT2);
-            const w = g.textWidth("--:--:--");
+            g.setTextColor(COL_TEXT3);
+            const w = g.textWidth("--:--");
             g.setCursor(Math.floor((SCREEN_W - w) / 2), 4);
-            g.print("--:--:--");
+            g.print("--:--");
           }
 
-          // 3. Draw Price Row (Inline, right-aligned to CONTENT_RIGHT, baseline aligned)
+          g.drawWifi(CONTENT_RIGHT - 10, 14, this.wifiConnected ? COL_GOOD : COL_BAD);
+          g.drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
+
+          // 2. Price hero: left-aligned "$" + digits, 24h change as a chip
           let valStr = "--";
           if (!isNaN(this.lastPrice)) {
             valStr = fmtCommas(this.lastPrice + 0.5);
           }
-          
-          let changeStr = "--";
-          if (!isNaN(this.changePct)) {
-            const sign = this.changePct >= 0 ? "+" : "";
-            changeStr = `${sign}${this.changePct.toFixed(2)}%`;
-          }
 
-          // Width calculations
           g.setTextSize(2);
           const wDollar = g.textWidth("$");
           g.setTextSize(4);
           const wVal = g.textWidth(valStr);
-          g.setTextSize(2);
-          const wChange = g.textWidth(changeStr);
-          
-          const gap = 8;
-          const wPrice = wDollar + wVal;
-          const totalW = wPrice + gap + wChange;
-          
-          // Start X position to right-align the combined block
-          let startX = CONTENT_RIGHT - totalW;
-          if (startX < 4) startX = 4;
-          
-          // Render Dollar Symbol (size 2, y=50)
-          g.setTextSize(2);
-          g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT2 : COL_TEXT);
-          g.setCursor(startX, 50);
-          g.print("$");
-          
-          // Render Price Value (size 4, y=34)
-          g.setTextSize(4);
-          g.setCursor(startX + wDollar, 34);
-          g.print(valStr);
-          
-          // Render Percentage Change (size 2, inline to the right, y=50 for baseline alignment)
-          g.setTextSize(2);
-          g.setTextColor(isNaN(this.changePct) ? COL_TEXT2 : (this.changePct >= 0 ? COL_GOOD : COL_BAD));
-          g.setCursor(startX + wPrice + gap, 50);
-          g.print(changeStr);
 
-          // 3.5 Draw 24h Range Position Bar (low ────●──── high) in the free
-          // band between header and price row, right-aligned above the %change.
-          // Mirrors drawRangeBar() in ui.cpp; blank until the first payload.
+          g.setTextSize(2);
+          g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT2);
+          g.setCursor(EDGE, 50);
+          g.print("$");
+
+          g.setTextSize(4);
+          g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT);
+          g.setCursor(EDGE + wDollar + 2, 34);
+          g.print(valStr);
+
+          let chipText, chipFill, chipTextCol;
+          if (!isNaN(this.changePct)) {
+            const sign = this.changePct >= 0 ? "+" : "";
+            chipText = `${sign}${this.changePct.toFixed(2)}%`;
+            chipFill = this.changePct >= 0 ? COL_GOOD : COL_BAD;
+            chipTextCol = COL_BG;
+          } else {
+            chipText = this.wifiConnected ? "CONNECTING" : "OFFLINE";
+            chipFill = COL_PANEL;
+            chipTextCol = this.wifiConnected ? COL_TEXT2 : COL_BAD;
+          }
+          g.setTextSize(2);
+          const chipTextW = g.textWidth(chipText);
+          const chipW = chipTextW + 16;
+          let chipX = EDGE + wDollar + 2 + wVal + 10;
+          if (chipX + chipW > CONTENT_RIGHT) chipX = CONTENT_RIGHT - chipW;
+          g.fillRoundRect(chipX, 39, chipW, 22, 6, chipFill);
+          g.setTextColor(chipTextCol);
+          g.setCursor(chipX + 8, 43);
+          g.print(chipText);
+
+          // 3. 24h range bar: full-width low ────●──── high track
           if (this.gSettings.rangeBar && !isNaN(this.lastPrice) && !isNaN(this.dayHigh) && !isNaN(this.dayLow) && this.dayHigh > this.dayLow) {
             const lowStr = fmtCommas(this.dayLow + 0.5);
             const highStr = fmtCommas(this.dayHigh + 0.5);
             g.setTextSize(1);
             const wLow = g.textWidth(lowStr);
             const wHigh = g.textWidth(highStr);
-            const TRACK_W = 48, GAP = 5, Y_TXT = 23, Y_TRK = 27;
-            const xTrack = CONTENT_RIGHT - wHigh - GAP - TRACK_W;
-            const xLow = xTrack - GAP - wLow;
+            const Y_TXT = 72, Y_TRK = 76;
+            const xL = EDGE + wLow + 8;
+            const xH = CONTENT_RIGHT - wHigh - 8;
 
             g.setTextColor(COL_TEXT2);
-            g.setCursor(xLow, Y_TXT);
+            g.setCursor(EDGE, Y_TXT);
             g.print(lowStr);
             g.setCursor(CONTENT_RIGHT - wHigh, Y_TXT);
             g.print(highStr);
 
-            g.drawFastHLine(xTrack, Y_TRK, TRACK_W, COL_TEXT2);
-            g.drawFastVLine(xTrack, Y_TRK - 2, 5, COL_TEXT2);
-            g.drawFastVLine(xTrack + TRACK_W - 1, Y_TRK - 2, 5, COL_TEXT2);
+            g.drawFastHLine(xL, Y_TRK, xH - xL, COL_BORDER);
+            g.drawFastVLine(xL, Y_TRK - 3, 7, COL_TEXT2);
+            g.drawFastVLine(xH - 1, Y_TRK - 3, 7, COL_TEXT2);
 
             let rf = (this.lastPrice - this.dayLow) / (this.dayHigh - this.dayLow);
             rf = Math.max(0, Math.min(1, rf)); // clamp: rolling 24h window
-            const rcx = xTrack + Math.floor(rf * (TRACK_W - 1));
-            g.fillCircle(rcx, Y_TRK, 3, COL_AMBER);
+            g.fillCircle(xL + Math.floor(rf * (xH - xL - 1)), Y_TRK, 3, COL_AMBER);
           }
 
-          // 4. Draw Chart Border
-          g.drawRect(CHART_X0 - 2, CHART_Y0 - 2, CANDLE_COUNT + 4, CHART_H + 4, COL_BORDER);
-
-          // Resolve visible candles
-          const CANDLE_IV_SEC = [300, 900, 3600, 14400];
-          const RANGE_SEC = [12 * 3600, 24 * 3600, 7 * 24 * 3600];
+          // 4. Chart: gridlines, candles/line, axis labels, last-price marker
           const candleSeconds = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
           const count = Math.min(288, Math.floor(RANGE_SEC[this.gSettings.rangeIdx] / candleSeconds));
-          
-          const CHART_W = 288;
-          const cw = Math.floor(CHART_W / count);
-          const x0 = CHART_X0 + (CHART_W - count * cw);
+          const cw = Math.max(1, Math.floor(CHART_W / count));
+          const plotW = cw * count;
+          const x0 = CONTENT_RIGHT - 2 - plotW;
 
           const visibleBuf = new Array(count);
           const validBuf = new Array(count).fill(false);
@@ -2522,16 +2701,16 @@
                 visibleBuf[i] = this.formingCandle;
                 validBuf[i] = true;
               } else {
-                const targetBucket = currentBucket - bucketsAgo;
-                const slot = Math.floor((targetBucket * candleSeconds / candleSeconds) % 288);
+                const targetEpoch = (currentBucket - bucketsAgo) * candleSeconds;
+                const slot = Math.floor((targetEpoch / candleSeconds) % 288);
                 const rec = this.candleRing[slot];
-                if (rec && rec.openEpoch === targetBucket * candleSeconds) {
+                if (rec && rec.openEpoch === targetEpoch) {
                   visibleBuf[i] = rec;
                   validBuf[i] = true;
                 }
               }
             } else {
-              // Fallback load raw slots on boot
+              // Fallback: paint raw slots pre-NTP
               const rec = this.candleRing[i];
               if (rec && rec.openEpoch !== 0) {
                 visibleBuf[i] = rec;
@@ -2540,11 +2719,9 @@
             }
           }
 
-          // Determine price boundaries
           let rangeMin = Infinity;
           let rangeMax = -Infinity;
           let haveRange = false;
-
           for (let i = 0; i < count; i++) {
             if (!validBuf[i]) continue;
             if (visibleBuf[i].l < rangeMin) rangeMin = visibleBuf[i].l;
@@ -2552,7 +2729,11 @@
             haveRange = true;
           }
 
-          if (haveRange) {
+          if (!haveRange) {
+            // Empty state: name it instead of leaving a void
+            const msg = this.wifiConnected ? "WAITING FOR MARKET FEED" : "OFFLINE — NO CACHED DATA";
+            drawCaps(g, x0 + Math.floor((plotW - capsWidth(msg)) / 2), CHART_Y0 + Math.floor(CHART_H / 2) - 4, msg, COL_TEXT3);
+          } else {
             let span = rangeMax - rangeMin;
             if (span < 1.0) span = 1.0;
 
@@ -2562,8 +2743,23 @@
               return Math.max(CHART_Y0, Math.min(CHART_Y0 + CHART_H - 1, y));
             };
 
+            // Gridlines at min / mid / max, under everything else
+            const yMax = priceToY(rangeMax);
+            const yMin = priceToY(rangeMin);
+            const yMid = priceToY((rangeMax + rangeMin) * 0.5);
+            g.drawFastHLine(x0, yMax, plotW, COL_GRID);
+            g.drawFastHLine(x0, yMid, plotW, COL_GRID);
+            g.drawFastHLine(x0, yMin, plotW, COL_GRID);
+
             const style = this.gSettings.styleIdx;
-            if (style === 2) { // STYLE_LINE
+            if (style === 2) { // STYLE_LINE: dim area + 2px amber line
+              for (let i = 0; i < count; i++) {
+                if (!validBuf[i]) continue;
+                const r = visibleBuf[i];
+                const cx = x0 + i * cw + Math.floor(cw / 2);
+                const cy = priceToY(r.c);
+                g.drawFastVLine(cx, cy + 1, CHART_Y0 + CHART_H - 1 - cy, COL_AMBER_DIM);
+              }
               let havePrev = false;
               let prevX = 0, prevY = 0;
               for (let i = 0; i < count; i++) {
@@ -2574,7 +2770,6 @@
                 const r = visibleBuf[i];
                 const cx = x0 + i * cw + Math.floor(cw / 2);
                 const cy = priceToY(r.c);
-
                 if (havePrev) {
                   g.drawLine(prevX, prevY, cx, cy, COL_AMBER);
                   g.drawLine(prevX, prevY + 1, cx, cy + 1, COL_AMBER);
@@ -2587,27 +2782,32 @@
                 havePrev = true;
               }
             } else {
-              // Plot columns for Candle styles (STYLE_RG = 0, STYLE_BW = 1)
               for (let i = 0; i < count; i++) {
                 if (!validBuf[i]) continue;
                 const r = visibleBuf[i];
                 const cx = x0 + i * cw;
                 const wickX = cx + Math.floor(cw / 2);
                 const bull = r.c >= r.o;
+                const forming = haveBucket && (i === count - 1);
 
                 let yH = priceToY(r.h);
                 let yL = priceToY(r.l);
                 if (yL < yH) { const temp = yH; yH = yL; yL = temp; }
 
-                let yO = priceToY(r.o);
-                let yC = priceToY(r.c);
-                let yTop = Math.min(yO, yC);
-                let bodyLen = Math.max(yO, yC) - yTop + 1;
-                let bodyW = cw >= 3 ? cw - 1 : cw;
+                const yO = priceToY(r.o);
+                const yC = priceToY(r.c);
+                const yTop = Math.min(yO, yC);
+                const bodyLen = Math.max(yO, yC) - yTop + 1;
+                const bodyW = cw >= 3 ? cw - 1 : cw;
 
                 if (style === 0) { // STYLE_RG
                   g.drawFastVLine(wickX, yH, yL - yH + 1, bull ? COL_GOOD_DIM : COL_BAD_DIM);
-                  g.fillRect(cx, yTop, bodyW, bodyLen, bull ? COL_GOOD : COL_BAD);
+                  if (forming && cw >= 3) {
+                    // The live candle is hollow — "still forming"
+                    g.drawRect(cx, yTop, bodyW, bodyLen, bull ? COL_GOOD : COL_BAD);
+                  } else {
+                    g.fillRect(cx, yTop, bodyW, bodyLen, bull ? COL_GOOD : COL_BAD);
+                  }
                 } else { // STYLE_BW
                   g.drawFastVLine(wickX, yH, yL - yH + 1, COL_TEXT);
                   if (bull) {
@@ -2620,58 +2820,105 @@
               }
             }
 
-            // Labels inside Chart
-            g.setTextColor(COL_TEXT2);
+            // Y-axis labels (min / mid / max) as BG-backed tags, left inside
             g.setTextSize(1);
-            g.setCursor(CHART_X0 + 2, CHART_Y0 + 1);
-            g.print(fmtCommas(rangeMax + 0.5));
-            g.setCursor(CHART_X0 + 2, CHART_Y0 + CHART_H - 9);
-            g.print(fmtCommas(rangeMin + 0.5));
-          }
-
-          // 5. Draw Footer
-          g.setTextSize(1);
-
-          let fx = 4;
-          const fy = 222;
-          const drawStat = (label, pct) => {
             g.setTextColor(COL_TEXT2);
-            g.setCursor(fx, fy);
-            g.print(label);
-            fx = g.cursorX;
-
-            g.setTextColor(COL_TEXT);
-            g.setCursor(fx, fy);
-            g.print(pct.toString().padStart(2, '0'));
-            fx = g.cursorX;
-
-            g.setTextColor(COL_TEXT2);
-            g.setCursor(fx, fy);
-            g.print("%  ");
-            fx = g.cursorX;
-          };
-
-          drawStat("CPU: ", this.cpuPct);
-          drawStat("ROM: ", this.romPct);
-          drawStat("RAM: ", this.ramPct);
-
-          // status dots, right-aligned — shifted left to leave room for the gear
-          // icon, which itself sits flush against CONTENT_RIGHT
-          g.drawWifi(CONTENT_RIGHT - 35, 230, this.wifiConnected ? COL_GOOD : COL_BAD);
-
-          let freshColor = COL_BAD;
-          if (this.priceOkMs !== 0) {
-            const age = this.getSimMillis() - this.priceOkMs;
-            if (age <= 5000) {
-              freshColor = (Math.floor(this.getSimMillis() / 1000) % 2 === 0) ? COL_GOOD : COL_BG;
+            const mids = [Math.floor(rangeMax + 0.5), Math.floor((rangeMax + rangeMin) * 0.5 + 0.5), Math.floor(rangeMin + 0.5)];
+            const ys = [yMax + 2, yMid - 4, yMin - 9];
+            for (let k = 0; k < 3; k++) {
+              const s = fmtCommas(mids[k]);
+              const w = g.textWidth(s);
+              g.fillRect(x0, ys[k] - 1, w + 5, 10, COL_BG);
+              g.setCursor(x0 + 2, ys[k]);
+              g.print(s);
             }
-            else if (age <= 30000) freshColor = COL_AMBER;
-          }
-          if (freshColor !== COL_BG) {
-            g.fillCircle(CONTENT_RIGHT - 59, 222, 4, freshColor);
+
+            // Last-price marker: dashed line + right-edge tag
+            if (!isNaN(this.lastPrice)) {
+              let yP = priceToY(this.lastPrice);
+              if (yP < CHART_Y0 + 5) yP = CHART_Y0 + 5;
+              if (yP > CHART_Y0 + CHART_H - 7) yP = CHART_Y0 + CHART_H - 7;
+              const tag = fmtCommas(this.lastPrice + 0.5);
+              const tagW = g.textWidth(tag);
+              for (let x = x0; x < x0 + plotW - tagW - 8; x += 7) {
+                g.drawFastHLine(x, yP, 4, COL_AMBER_DIM);
+              }
+              g.fillRect(x0 + plotW - tagW - 6, yP - 5, tagW + 6, 11, COL_BG);
+              g.setTextColor(COL_AMBER);
+              g.setCursor(x0 + plotW - tagW - 4, yP - 4);
+              g.print(tag);
+            }
+
+            // X-axis time ticks: 12h -> 2h, 24h -> 4h, 7D -> daily
+            let tickSec = 7200;
+            let dayLabels = false;
+            if (this.gSettings.rangeIdx === 1) tickSec = 14400;
+            else if (this.gSettings.rangeIdx === 2) { tickSec = 86400; dayLabels = true; }
+
+            g.drawFastHLine(x0, AXIS_Y, plotW, COL_GRID);
+            g.setTextSize(1);
+            g.setTextColor(COL_TEXT3);
+            for (let i = 0; i < count; i++) {
+              if (!validBuf[i]) continue;
+              const r = visibleBuf[i];
+              if (r.openEpoch % tickSec !== 0) continue;
+              const cx = x0 + i * cw + Math.floor(cw / 2);
+              g.drawFastVLine(cx, AXIS_Y, 4, COL_BORDER);
+              const tdt = getICTDateTime(r.openEpoch);
+              const lb = dayLabels ? `${tdt.mday}` : `${tdt.hour}`;
+              const w = g.textWidth(lb);
+              let lx = cx - Math.floor(w / 2);
+              if (lx < x0) lx = x0;
+              if (lx + w > x0 + plotW) lx = x0 + plotW - w;
+              g.setCursor(lx, AXIS_Y + 6);
+              g.print(lb);
+            }
           }
 
-          g.drawGear(CONTENT_RIGHT - 9, 226, COL_TEXT2);
+          // 5. Footer: labeled feed status, muted device stats, gear button
+          g.drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
+
+          const now = this.getSimMillis();
+          let txt, col;
+          let pulse = false;
+          if (!this.wifiConnected) {
+            txt = "OFFLINE";
+            col = COL_BAD;
+          } else if (this.priceOkMs === 0) {
+            txt = "CONNECTING";
+            col = COL_TEXT2;
+            pulse = true;
+          } else {
+            // Freshness is judged against the configured poll cadence
+            const age = now - this.priceOkMs;
+            const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
+            const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
+            if (age <= freshMs) {
+              txt = "LIVE";
+              col = COL_GOOD;
+              pulse = true;
+            } else {
+              col = age <= staleMs ? COL_AMBER : COL_BAD;
+              txt = age < 60000 ? `STALE ${Math.floor(age / 1000)}s` : `STALE ${Math.floor(age / 60000)}m`;
+            }
+          }
+
+          const dotOn = !pulse || (Math.floor(now / 1000) % 2 === 0);
+          if (dotOn) g.fillCircle(7, 222, 3, col);
+          drawCaps(g, 14, 219, txt, col);
+
+          const pad2 = (n) => String(n).padStart(2, '0');
+          g.setTextSize(1);
+          g.setTextColor(COL_TEXT3);
+          g.setCursor(EDGE, 230);
+          g.print(`CPU ${pad2(this.cpuPct)}%  RAM ${pad2(this.ramPct)}%  ROM ${pad2(this.romPct)}%`);
+
+          // Settings button: outlined hit target, flush with CONTENT_RIGHT
+          if (this.pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H)) {
+            g.fillRoundRect(CONTENT_RIGHT - 32, 216, 28, 20, 5, COL_PANEL_HI);
+          }
+          g.drawRoundRect(CONTENT_RIGHT - 32, 216, 28, 20, 5, COL_BORDER);
+          g.drawGear(CONTENT_RIGHT - 18, 226, COL_TEXT2);
         }
 
         // One-frame touch feedback border, overlaid while a touch registers
@@ -2684,19 +2931,19 @@
       updateInspectorUI() {
         document.getElementById("ipAddressVal").innerText = this.ipAddress || "no ip";
         document.getElementById("wifiStatusVal").innerText = this.wifiStatus;
-        
+
         if (this.formingCandle.openEpoch > 0) {
           document.getElementById("formingEpochVal").innerText = this.formingCandle.openEpoch;
           const age = Math.floor(this.simulatedTimeEpoch - this.formingCandle.openEpoch);
           document.getElementById("formingAgeVal").innerText = `${age}s`;
-          document.getElementById("formingOhlcVal").innerText = 
+          document.getElementById("formingOhlcVal").innerText =
             `O:${this.formingCandle.o.toFixed(0)} H:${this.formingCandle.h.toFixed(0)} L:${this.formingCandle.l.toFixed(0)} C:${this.formingCandle.c.toFixed(0)}`;
         } else {
           document.getElementById("formingEpochVal").innerText = "--";
           document.getElementById("formingAgeVal").innerText = "--";
           document.getElementById("formingOhlcVal").innerText = "--";
         }
-        
+
         let actualRecords = this.candleRing.filter(r => r.openEpoch > 0).length;
         document.getElementById("totalRecordsVal").innerText = `${actualRecords} / 288`;
         document.getElementById("fsSizeVal").innerText = `${actualRecords * 20} bytes`;
@@ -2705,13 +2952,13 @@
       rebuildCandleTableUI() {
         const tbody = document.getElementById("candlesTableBody");
         tbody.innerHTML = "";
-        
+
         const activeRecords = this.candleRing
           .filter(r => r.openEpoch > 0)
           .sort((a, b) => b.openEpoch - a.openEpoch); // newest first
-          
+
         if (activeRecords.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding: 2rem;">No candle records saved in database.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-3); padding: 2rem;">No candle records saved in database.</td></tr>`;
           return;
         }
 
@@ -2725,7 +2972,7 @@
             <td>$${fmtCommas(r.h)}</td>
             <td>$${fmtCommas(r.l)}</td>
             <td style="font-weight:600;">$${fmtCommas(r.c)}</td>
-            <td style="color:${chg >= 0 ? 'var(--green)' : 'var(--red)'}; font-weight:600;">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
+            <td style="color:${chg >= 0 ? 'var(--good)' : 'var(--bad)'}; font-weight:600;">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
           `;
           tbody.appendChild(tr);
         });
@@ -2735,7 +2982,7 @@
     // ── MAIN LOOP & INITIALIZATION ──
     window.addEventListener("DOMContentLoaded", () => {
       const sim = new ESP32Simulator();
-      
+
       // Initialize Board
       sim.reset();
 
@@ -2745,11 +2992,11 @@
         tab.addEventListener("click", () => {
           tabs.forEach(t => t.classList.remove("active"));
           document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
-          
+
           tab.classList.add("active");
           const activeTabContent = document.getElementById(`tab-${tab.dataset.tab}`);
           activeTabContent.classList.add("active");
-          
+
           if (tab.dataset.tab === "candles-tab") {
             sim.rebuildCandleTableUI();
           }
@@ -2785,8 +3032,7 @@
 
       // Setup Touch Screen pointer listeners
       const canvas = document.getElementById("screenCanvas");
-      canvas.addEventListener("pointerdown", (e) => {
-        canvas.setPointerCapture(e.pointerId);
+      const toSimCoords = (e) => {
         const rect = canvas.getBoundingClientRect();
         let tx = Math.floor((e.clientX - rect.left) * (320 / rect.width));
         let ty = Math.floor((e.clientY - rect.top) * (240 / rect.height));
@@ -2794,30 +3040,24 @@
           tx = 320 - 1 - tx;
           ty = 240 - 1 - ty;
         }
+        return [tx, ty];
+      };
+
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        const [tx, ty] = toSimCoords(e);
         sim.handleTouchDown(tx, ty);
       });
 
       canvas.addEventListener("pointermove", (e) => {
         if (!sim.touchIsDown) return;
-        const rect = canvas.getBoundingClientRect();
-        let tx = Math.floor((e.clientX - rect.left) * (320 / rect.width));
-        let ty = Math.floor((e.clientY - rect.top) * (240 / rect.height));
-        if (sim.gSettings.flip) {
-          tx = 320 - 1 - tx;
-          ty = 240 - 1 - ty;
-        }
+        const [tx, ty] = toSimCoords(e);
         sim.handleTouchMove(tx, ty);
       });
 
       canvas.addEventListener("pointerup", (e) => {
         canvas.releasePointerCapture(e.pointerId);
-        const rect = canvas.getBoundingClientRect();
-        let tx = Math.floor((e.clientX - rect.left) * (320 / rect.width));
-        let ty = Math.floor((e.clientY - rect.top) * (240 / rect.height));
-        if (sim.gSettings.flip) {
-          tx = 320 - 1 - tx;
-          ty = 240 - 1 - ty;
-        }
+        const [tx, ty] = toSimCoords(e);
         sim.handleTouchUp(tx, ty);
       });
 
@@ -2830,7 +3070,7 @@
       document.getElementById("corruptFsBtn").addEventListener("click", () => {
         sim.isFsHealthy = false;
         document.getElementById("fsHealthVal").innerText = "CORRUPTED (sector read/write errors)";
-        document.getElementById("fsHealthVal").style.color = "var(--red)";
+        document.getElementById("fsHealthVal").style.color = "var(--bad)";
         sim.log("ERROR", "LFS", "Simulated sector block errors. LittleFS corrupted.");
       });
 
@@ -2838,7 +3078,7 @@
       document.getElementById("formatFsBtn").addEventListener("click", () => {
         sim.isFsHealthy = true;
         document.getElementById("fsHealthVal").innerText = "OK";
-        document.getElementById("fsHealthVal").style.color = "var(--green)";
+        document.getElementById("fsHealthVal").style.color = "var(--good)";
         sim.mountLittleFS();
       });
 
