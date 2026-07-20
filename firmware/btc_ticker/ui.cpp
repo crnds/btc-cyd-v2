@@ -106,16 +106,45 @@ void uiUsePalette(lgfx::LGFX_Sprite& spr) {
 // ── LAYOUT (4px grid; nothing renders past CONTENT_RIGHT) ──
 static const int SCREEN_W      = 320;
 static const int SCREEN_H      = 240;
-static const int PAD_RIGHT     = 20;
-static const int CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 300
+static const int PAD_RIGHT     = 0;
+static const int CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 320
 static const int EDGE          = 4;  // standard left inset
 
 // Chart footprint: fixed 288px-wide plot so the candle width is always
-// >= 1px even at the maximum of MAX_CANDLES visible candles.
-static const int CHART_W  = 288;
-static const int CHART_Y0 = 92;   // plot top
-static const int CHART_H  = 98;   // plot height, y 92..189
-static const int AXIS_Y   = 190;  // x-axis hairline; labels live 196..204
+// >= 1px even at the maximum of MAX_CANDLES visible candles. The bottom
+// edge (AXIS_Y) is fixed; the top grows upward into any strip freed by
+// hiding the price hero and/or the range bar so those pixels aren't wasted.
+static const int CHART_W       = 288;
+static const int AXIS_Y        = 190;  // x-axis hairline; labels live 196..204
+static const int CONTENT_TOP   = 30;   // first content row under the status bar
+// Stacked layout tops (plot is [y0, AXIS_Y)):
+//   price+range → 92, price only → 72, range only → 50, neither → 30
+static const int CHART_Y0_BOTH  = 92;
+static const int CHART_Y0_PRICE = 72;
+static const int CHART_Y0_RANGE = 50;
+// Range-bar label/track y when stacked under the status bar (price hidden)
+// vs under the price hero. Track is vertically centered on the 8px labels.
+static const int RANGE_Y_TXT_PRICE = 72;
+static const int RANGE_Y_TRK_PRICE = 76;
+static const int RANGE_Y_TXT_TOP   = 30;
+static const int RANGE_Y_TRK_TOP   = 34;
+
+// Layout depends on the Price / Range bar toggles only (not data
+// availability) so the chart doesn't jump when the first payload arrives.
+static int chartY0() {
+  if (gSettings.showPrice && gSettings.rangeBar) return CHART_Y0_BOTH;
+  if (gSettings.showPrice) return CHART_Y0_PRICE;
+  if (gSettings.rangeBar) return CHART_Y0_RANGE;
+  return CONTENT_TOP;
+}
+static int chartH() { return AXIS_Y - chartY0(); }
+
+static int rangeBarTxtY() {
+  return gSettings.showPrice ? RANGE_Y_TXT_PRICE : RANGE_Y_TXT_TOP;
+}
+static int rangeBarTrkY() {
+  return gSettings.showPrice ? RANGE_Y_TRK_PRICE : RANGE_Y_TRK_TOP;
+}
 
 // Pressed-point state for pressed-state highlights (see uiSetPressedPoint).
 static int pressPtX = -1, pressPtY = -1;
@@ -209,10 +238,38 @@ static void drawGear(lgfx::LovyanGFX* g, int cx, int cy, uint16_t col) {
 }
 
 // ── STATUS BAR (y 0..24) ───────────────────────────────────
-// Asset tag left, clock centered, date + wifi right. Connectivity lives
-// here (chrome), data freshness lives in the footer (next to the chart).
+// Feed-status pulse + wifi glyph top-left, clock centered, date right.
+// Pulse color encodes freshness (green live / amber stale / red offline);
+// it blinks while connecting or while the feed is fresh.
 static void drawStatusBar(lgfx::LovyanGFX* g, const UiState& st) {
-  drawCaps(g, EDGE, 8, "BTC/USDT", COL_TEXT3);
+  uint32_t now = millis();
+  uint16_t feedCol;
+  bool pulse = false;
+  if (!st.wifiConnected) {
+    feedCol = COL_BAD;
+  } else if (st.priceOkMs == 0) {
+    feedCol = COL_TEXT2;
+    pulse = true;
+  } else {
+    // Freshness is judged against the configured poll cadence: at a 5m
+    // interval a 45s-old price is still "live", not "stale".
+    uint32_t age = now - st.priceOkMs;
+    uint32_t freshMs = 2 * settingsPriceIntervalMs() + 3000;
+    uint32_t staleMs = 4 * settingsPriceIntervalMs() + 30000;
+    if (age <= freshMs) {
+      feedCol = COL_GOOD;
+      pulse = true;
+    } else {
+      feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
+    }
+  }
+  // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap between them.
+  const int pulseX = EDGE + 3;   // 7
+  const int statusY = 12;
+  const int wifiX = pulseX + 3 + 4 + 9;  // 23 — clear of the pulse
+  bool dotOn = !pulse || ((now / 1000) % 2 == 0);
+  if (dotOn) g->fillCircle(pulseX, statusY, 3, feedCol);
+  drawWifi(g, wifiX, statusY, st.wifiConnected ? COL_GOOD : COL_BAD);
 
   struct tm t;
   bool haveTime = getLocalTime(&t, 0);
@@ -246,7 +303,7 @@ static void drawStatusBar(lgfx::LovyanGFX* g, const UiState& st) {
     g->setTextSize(1);
     g->setTextColor(COL_TEXT2);
     int dateW = g->textWidth(dbuf);
-    g->setCursor(CONTENT_RIGHT - 24 - dateW, 8);  // 24px reserved for the wifi glyph
+    g->setCursor(CONTENT_RIGHT - dateW, 8);
     g->print(dbuf);
   } else {
     g->setTextSize(2);
@@ -255,9 +312,6 @@ static void drawStatusBar(lgfx::LovyanGFX* g, const UiState& st) {
     g->setCursor((SCREEN_W - w) / 2, 4);
     g->print("--:--");
   }
-
-  // WiFi glyph, right corner: radii 3/6/9 keep it inside CONTENT_RIGHT.
-  drawWifi(g, CONTENT_RIGHT - 10, 14, st.wifiConnected ? COL_GOOD : COL_BAD);
 
   g->drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
 }
@@ -309,9 +363,10 @@ static void drawPriceRow(lgfx::LovyanGFX* g, const UiState& st) {
   g->print(chipBuf);
 }
 
-// ── 24H RANGE BAR (y 72..80) ───────────────────────────────
+// ── 24H RANGE BAR ──────────────────────────────────────────
 // Full-width `low ────●──── high` track with the current price as the dot.
-// Skipped until the first ticker payload arrives (or on a degenerate
+// Sits under the price hero when that is shown, otherwise under the status
+// bar. Skipped until the first ticker payload arrives (or on a degenerate
 // high <= low), matching the chart's stay-blank-when-no-data behavior.
 static void drawRangeBar(lgfx::LovyanGFX* g, const UiState& st) {
   if (!gSettings.rangeBar) return;  // hidden via the "Range bar" settings row
@@ -325,8 +380,8 @@ static void drawRangeBar(lgfx::LovyanGFX* g, const UiState& st) {
   int wLow = g->textWidth(lowStr);
   int wHigh = g->textWidth(highStr);
 
-  const int Y_TXT = 72;
-  const int Y_TRK = 76;  // vertically centered on the 8px-tall labels
+  const int Y_TXT = rangeBarTxtY();
+  const int Y_TRK = rangeBarTrkY();
   int xL = EDGE + wLow + 8;
   int xH = CONTENT_RIGHT - wHigh - 8;
 
@@ -346,15 +401,17 @@ static void drawRangeBar(lgfx::LovyanGFX* g, const UiState& st) {
   g->fillCircle(xL + (int)(f * (xH - xL - 1)), Y_TRK, 3, COL_AMBER);
 }
 
-// ── CHART (plot y 92..189, axis strip 190..206) ────────────
+// ── CHART (plot top depends on Price/Range toggles; axis strip 190..206)
 static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
+  const int cY0 = chartY0();
+  const int cH  = chartH();
+
   int count = settingsVisibleCount();
   if (count < 1) count = 1;
   if (count > MAX_CANDLES) count = MAX_CANDLES;
-  int cw = CHART_W / count;
-  if (cw < 1) cw = 1;
-  int plotW = cw * count;
-  int x0 = CONTENT_RIGHT - 2 - plotW;  // right edge lands just inside CONTENT_RIGHT
+
+  int x0 = EDGE;  // 4
+  int plotW = CONTENT_RIGHT - 2 - x0;  // 314
 
   bool haveBucket = formingCandle.openEpoch != 0;
   uint32_t currentBucket = haveBucket ? formingCandle.openEpoch / candleSeconds : 0;
@@ -373,7 +430,7 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
     // Empty state (fresh boot with a wiped DB and no feed yet): name the
     // state instead of leaving a void between the range bar and the footer.
     const char* msg = st.wifiConnected ? "WAITING FOR MARKET FEED" : "OFFLINE — NO CACHED DATA";
-    drawCaps(g, x0 + (plotW - capsWidth(msg)) / 2, CHART_Y0 + CHART_H / 2 - 4, msg, COL_TEXT3);
+    drawCaps(g, x0 + (plotW - capsWidth(msg)) / 2, cY0 + cH / 2 - 4, msg, COL_TEXT3);
     return;
   }
   float span = rangeMax - rangeMin;
@@ -381,9 +438,9 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
 
   auto priceToY = [&](float p) -> int {
     float f = (p - rangeMin) / span;
-    int y = CHART_Y0 + CHART_H - 1 - (int)(f * (CHART_H - 1));
-    if (y < CHART_Y0) y = CHART_Y0;
-    if (y > CHART_Y0 + CHART_H - 1) y = CHART_Y0 + CHART_H - 1;
+    int y = cY0 + cH - 1 - (int)(f * (cH - 1));
+    if (y < cY0) y = cY0;
+    if (y > cY0 + cH - 1) y = cY0 + cH - 1;
     return y;
   };
 
@@ -399,25 +456,34 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
   ChartStyle style = (ChartStyle)gSettings.styleIdx;
 
   if (style == STYLE_LINE) {
-    // Dim area fill first, then a 2px amber line on top.
-    for (int i = 0; i < count; i++) {
-      CandleRec r;
-      if (!visibleCandle(i, count, haveBucket, currentBucket, r)) continue;
-      int x = x0 + i * cw + cw / 2;
-      int y = priceToY(r.c);
-      g->drawFastVLine(x, y + 1, CHART_Y0 + CHART_H - 1 - y, COL_AMBER_DIM);
-    }
+    // Solid dim area under the polyline (quad per segment = two triangles),
+    // then a 2px amber line on top. A single VLine-per-sample left gaps
+    // between spaced candles and read as vertical strips instead of a fill.
+    const int yBot = cY0 + cH - 1;
     bool havePrev = false;
     int prevX = 0, prevY = 0;
     for (int i = 0; i < count; i++) {
       CandleRec r;
-      if (!visibleCandle(i, count, haveBucket, currentBucket, r)) { havePrev = false; continue; }
-      int x = x0 + i * cw + cw / 2;
+      if (!visibleCandle(i, count, haveBucket, currentBucket, r)) {
+        havePrev = false;
+        continue;
+      }
+      int x = x0 + (i * plotW + plotW / 2) / count;
       int y = priceToY(r.c);
       if (havePrev) {
+        if (x == prevX) {
+          int top = (prevY < y) ? prevY : y;
+          if (yBot > top) g->drawFastVLine(x, top + 1, yBot - top, COL_AMBER_DIM);
+        } else {
+          // Polygon (prevX,prevY) → (x,y) → (x,yBot) → (prevX,yBot)
+          g->fillTriangle(prevX, prevY, x, y, x, yBot, COL_AMBER_DIM);
+          g->fillTriangle(prevX, prevY, x, yBot, prevX, yBot, COL_AMBER_DIM);
+        }
         g->drawLine(prevX, prevY, x, y, COL_AMBER);
         g->drawLine(prevX, prevY + 1, x, y + 1, COL_AMBER);
       } else {
+        // Isolated sample (first point or after a gap): stem + pixel.
+        if (yBot > y) g->drawFastVLine(x, y + 1, yBot - y, COL_AMBER_DIM);
         g->drawPixel(x, y, COL_AMBER);
         g->drawPixel(x, y + 1, COL_AMBER);
       }
@@ -429,7 +495,9 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
     for (int i = 0; i < count; i++) {
       CandleRec r;
       if (!visibleCandle(i, count, haveBucket, currentBucket, r)) continue;
-      int x = x0 + i * cw;
+      int x = x0 + (i * plotW) / count;
+      int nextX = x0 + ((i + 1) * plotW) / count;
+      int cw = nextX - x;
       int wickX = x + cw / 2;
       bool bull = r.c >= r.o;
       bool forming = haveBucket && (i == count - 1);
@@ -481,19 +549,25 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
   }
 
   // Last-price marker: dashed dim-amber line across the plot + a price tag
-  // on the right edge. Anchors "where is the price now" inside the shape.
+  // centered on the chart. Anchors "where is the price now" inside the shape.
   if (!isnan(st.price)) {
     int yP = priceToY(st.price);
-    if (yP < CHART_Y0 + 5) yP = CHART_Y0 + 5;
-    if (yP > CHART_Y0 + CHART_H - 7) yP = CHART_Y0 + CHART_H - 7;
+    if (yP < cY0 + 5) yP = cY0 + 5;
+    if (yP > cY0 + cH - 7) yP = cY0 + cH - 7;
     String tag = fmtCommas((long)(st.price + 0.5f));
     int tagW = g->textWidth(tag);
-    for (int x = x0; x < x0 + plotW - tagW - 8; x += 7) {
+    int tagBoxW = tagW + 6;
+    int tagBoxX = x0 + (plotW - tagBoxW) / 2;
+    // Dash left of the tag, then right of it — leave a gap for the label.
+    for (int x = x0; x + 4 <= tagBoxX - 2; x += 7) {
       g->drawFastHLine(x, yP, 4, COL_AMBER_DIM);
     }
-    g->fillRect(x0 + plotW - tagW - 6, yP - 5, tagW + 6, 11, COL_BG);
+    for (int x = tagBoxX + tagBoxW + 2; x + 4 <= x0 + plotW; x += 7) {
+      g->drawFastHLine(x, yP, 4, COL_AMBER_DIM);
+    }
+    g->fillRect(tagBoxX, yP - 5, tagBoxW, 11, COL_BG);
     g->setTextColor(COL_AMBER);
-    g->setCursor(x0 + plotW - tagW - 4, yP - 4);
+    g->setCursor(tagBoxX + 2, yP - 4);
     g->print(tag);
   }
 
@@ -512,7 +586,7 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
     CandleRec r;
     if (!visibleCandle(i, count, haveBucket, currentBucket, r)) continue;
     if (r.openEpoch % tickSec != 0) continue;
-    int cx = x0 + i * cw + cw / 2;
+    int cx = x0 + (i * plotW + plotW / 2) / count;
     g->drawFastVLine(cx, AXIS_Y, 4, COL_BORDER);
     time_t tt = (time_t)r.openEpoch;
     struct tm* tv = localtime(&tt);
@@ -530,52 +604,17 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
 }
 
 // ── FOOTER (y 212..238) ────────────────────────────────────
-// Feed freshness as labeled text (not a bare colored dot — status must not
-// depend on color alone), device stats demoted to a muted micro-line, and
-// the settings gear as a real outlined button.
+// Device stats as a muted micro-line + the settings gear as an outlined
+// button. Feed freshness lives as the pulsing dot in the status bar.
 static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
   g->drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
-
-  uint32_t now = millis();
-  const char* txt;
-  uint16_t col;
-  bool pulse = false;
-  char staleBuf[12];
-  if (!st.wifiConnected) {
-    txt = "OFFLINE";
-    col = COL_BAD;
-  } else if (st.priceOkMs == 0) {
-    txt = "CONNECTING";
-    col = COL_TEXT2;
-    pulse = true;
-  } else {
-    // Freshness is judged against the configured poll cadence: at a 5m
-    // interval a 45s-old price is still "live", not "stale".
-    uint32_t age = now - st.priceOkMs;
-    uint32_t freshMs = 2 * settingsPriceIntervalMs() + 3000;
-    uint32_t staleMs = 4 * settingsPriceIntervalMs() + 30000;
-    if (age <= freshMs) {
-      txt = "LIVE";
-      col = COL_GOOD;
-      pulse = true;
-    } else {
-      col = age <= staleMs ? COL_AMBER : COL_BAD;
-      if (age < 60000) snprintf(staleBuf, sizeof(staleBuf), "STALE %us", (unsigned)(age / 1000));
-      else snprintf(staleBuf, sizeof(staleBuf), "STALE %um", (unsigned)(age / 60000));
-      txt = staleBuf;
-    }
-  }
-
-  bool dotOn = !pulse || ((now / 1000) % 2 == 0);
-  if (dotOn) g->fillCircle(7, 222, 3, col);
-  drawCaps(g, 14, 219, txt, col);
 
   char stats[32];
   snprintf(stats, sizeof(stats), "CPU %02u%%  RAM %02u%%  ROM %02u%%",
            (unsigned)st.cpuPct, (unsigned)st.ramPct, (unsigned)st.romPct);
   g->setTextSize(1);
   g->setTextColor(COL_TEXT3);
-  g->setCursor(EDGE, 230);
+  g->setCursor(EDGE, 222);
   g->print(stats);
 
   // Settings button: outlined hit-target look, flush with CONTENT_RIGHT.
@@ -588,7 +627,7 @@ static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
 void uiRender(lgfx::LovyanGFX* g, const UiState& st) {
   g->fillScreen(COL_BG);
   drawStatusBar(g, st);
-  drawPriceRow(g, st);
+  if (gSettings.showPrice) drawPriceRow(g, st);
   drawRangeBar(g, st);
   drawChart(g, st);
   drawFooter(g, st);
@@ -597,7 +636,7 @@ void uiRender(lgfx::LovyanGFX* g, const UiState& st) {
 // ── SETTINGS: MODEL ────────────────────────────────────────
 static const char* const SETTINGS_ROW_LABELS[ROW_COUNT] = {
   "Brightness", "Flip screen", "Price fetch", "Candle size", "Time range", "Chart style",
-  "Night schedule", "Force night mode", "Range bar"
+  "Night schedule", "Force night mode", "Range bar", "Price"
 };
 
 // One-line explanation shown on each option-picker page.
@@ -610,7 +649,8 @@ static const char* const SETTINGS_ROW_DESC[ROW_COUNT] = {
   "Candle colors, monochrome, or a line chart.",
   "Dim red-only screen from 23:00 to 08:00.",
   "Keep night mode on, ignoring the schedule.",
-  "Show today's low-to-high position bar."
+  "Show today's low-to-high position bar.",
+  "Show the live price and 24h change."
 };
 
 // Visual order of the grouped list — independent of the ROW_* enum so the
@@ -624,6 +664,7 @@ static const SetItem SET_ITEMS[] = {
   {ROW_RANGE, nullptr},
   {0xFF, "CHART"},
   {ROW_STYLE, nullptr},
+  {ROW_SHOW_PRICE, nullptr},
   {ROW_RANGEBAR, nullptr},
   {0xFF, "DISPLAY"},
   {ROW_BRIGHTNESS, nullptr},
@@ -854,6 +895,206 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
   g->setTextColor(COL_BG);
   g->setCursor(UI_CONFIRM_OK_X0 + 18, UI_CONFIRM_Y0 + 9);
   g->print("CONFIRM");
+}
+
+// ── FULL-SCREEN CLOCK ──────────────────────────────────────
+// Minimal ambient clock built only from COL_* design tokens (BG, TEXT,
+// TEXT3, AMBER, BORDER, PANEL_HI, GRID) so night mode inherits for free:
+// renderIfDue calls uiSetNightMode() before uiRenderClock, which remaps
+// the 4-bit palette (or the COL_* RGB565 fallbacks) to red-luminance —
+// face, hands, digital digits, hairline, and close "X" all go fully red
+// with no special-case code here. Three modes cycle on whole-screen tap;
+// "X" top-left exits back to the dashboard.
+
+// Angle from 12 o'clock, clockwise, in radians. Screen y grows downward so
+// the y component uses -cos.
+static void handTip(int cx, int cy, float angle, int len, int& ox, int& oy) {
+  ox = cx + (int)(sinf(angle) * (float)len + 0.5f);
+  oy = cy - (int)(cosf(angle) * (float)len + 0.5f);
+}
+
+// Rectangular hand (constant width tip-to-hub). Built as a quad from two
+// triangles — no AA, no taper. Base is pulled slightly past the hub so the
+// hub disc covers the join cleanly at every angle.
+static void drawClockHand(lgfx::LovyanGFX* g, int cx, int cy, float angle,
+                          int len, int halfW, uint16_t col) {
+  int tx, ty;
+  handTip(cx, cy, angle, len, tx, ty);
+  // Perpendicular to the hand direction (for the rectangle's short edge).
+  float px = cosf(angle);
+  float py = sinf(angle);
+  int bx = cx - (int)(sinf(angle) * 4.0f);
+  int by = cy + (int)(cosf(angle) * 4.0f);
+  int ox = (int)(px * (float)halfW + 0.5f);
+  int oy = (int)(py * (float)halfW + 0.5f);
+  // Quad corners: base-left, base-right, tip-right, tip-left.
+  int b1x = bx + ox, b1y = by + oy;
+  int b2x = bx - ox, b2y = by - oy;
+  int t1x = tx + ox, t1y = ty + oy;
+  int t2x = tx - ox, t2y = ty - oy;
+  g->fillTriangle(b1x, b1y, b2x, b2y, t2x, t2y, col);
+  g->fillTriangle(b1x, b1y, t1x, t1y, t2x, t2y, col);
+}
+
+// Thin needle with a short counterweight past the hub (classic second hand).
+static void drawSecondHand(lgfx::LovyanGFX* g, int cx, int cy, float angle,
+                           int len, uint16_t col) {
+  int tx, ty, cx2, cy2;
+  handTip(cx, cy, angle, len, tx, ty);
+  // Counterweight ~18% of the forward length, opposite direction.
+  handTip(cx, cy, angle + 3.14159265f, len / 5, cx2, cy2);
+  g->drawLine(cx2, cy2, tx, ty, col);
+}
+
+// Draws a minimal analog face centered at (cx, cy) with outer radius `r`.
+// Twelve short hour ticks mark the hours; hands are driven from `t` when
+// non-null (pre-NTP the face is empty of hands). Second hand is COL_AMBER
+// (orange by day, red-luminance under night mode); hour/minute use COL_TEXT.
+static void drawAnalogFace(lgfx::LovyanGFX* g, int cx, int cy, int r,
+                           const struct tm* t) {
+  g->drawCircle(cx, cy, r, COL_TEXT);
+
+  // 12 short hour marks just inside the rim (length scales with face size).
+  // 12 o'clock is a touch longer so the top of the face is unambiguous.
+  const float TAU = 6.2831853f;
+  int tickOut = r - 2;
+  int tickIn  = r - (r >= 70 ? 10 : 7);
+  int tickIn12 = r - (r >= 70 ? 14 : 10);
+  for (int h = 0; h < 12; h++) {
+    float a = (float)h / 12.0f * TAU;
+    int iLen = (h == 0) ? tickIn12 : tickIn;
+    int x0, y0, x1, y1;
+    handTip(cx, cy, a, tickOut, x0, y0);
+    handTip(cx, cy, a, iLen, x1, y1);
+    g->drawLine(x0, y0, x1, y1, COL_TEXT);
+  }
+
+  if (t) {
+    // Continuous angles (minute contributes to hour, second to minute) so
+    // hands don't jump at whole-unit boundaries.
+    float sec = (float)t->tm_sec;
+    float min = (float)t->tm_min + sec / 60.0f;
+    float hr  = (float)(t->tm_hour % 12) + min / 60.0f;
+    float aH = hr  / 12.0f * TAU;
+    float aM = min / 60.0f * TAU;
+    float aS = sec / 60.0f * TAU;
+
+    drawClockHand(g, cx, cy, aH, (int)(r * 0.52f), 3, COL_TEXT);  // hour
+    drawClockHand(g, cx, cy, aM, (int)(r * 0.74f), 2, COL_TEXT);  // minute
+    drawSecondHand(g, cx, cy, aS, (int)(r * 0.88f), COL_AMBER);   // second
+  }
+
+  // Hub: solid disc with a tiny BG pin so hands read as attached to a pivot.
+  g->fillCircle(cx, cy, 4, COL_TEXT);
+  g->fillCircle(cx, cy, 1, COL_BG);
+}
+
+// 24h digital block, no seconds.
+//   large (digital-only): single row "HH:MM", max size that fills the screen.
+//   split pane:           "HH" over "MM" (no colon), max size for the half-box.
+// GLCD glyphs are 6x8 per size unit.
+static void drawDigitalBlock(lgfx::LovyanGFX* g, int x0, int y0, int w, int h,
+                             const struct tm* t, bool large) {
+  uint16_t col = t ? COL_TEXT : COL_TEXT3;
+
+  if (large) {
+    // Digital-only: one row HH:MM. 5 glyphs * 6 px wide, 8 px tall.
+    char buf[6];
+    if (t) snprintf(buf, sizeof(buf), "%02d:%02d", t->tm_hour, t->tm_min);
+    else   snprintf(buf, sizeof(buf), "--:--");
+
+    const int padX = 4;
+    const int padY = 8;
+    int maxByW = (w - 2 * padX) / 30;  // 5 * 6
+    int maxByH = (h - 2 * padY) / 8;
+    int size = maxByW < maxByH ? maxByW : maxByH;
+    if (size < 1) size = 1;
+
+    g->setTextSize(size);
+    int tw = g->textWidth(buf);
+    int th = 8 * size;
+    g->setTextColor(col);
+    g->setCursor(x0 + (w - tw) / 2, y0 + (h - th) / 2);
+    g->print(buf);
+    return;
+  }
+
+  // Split pane: HH / MM stacked with breathing room (not max-fill — that
+  // reads as bloated next to the analog face on a 160px half-width).
+  char hh[3], mm[3];
+  if (t) {
+    snprintf(hh, sizeof(hh), "%02d", t->tm_hour);
+    snprintf(mm, sizeof(mm), "%02d", t->tm_min);
+  } else {
+    snprintf(hh, sizeof(hh), "--");
+    snprintf(mm, sizeof(mm), "--");
+  }
+
+  const int padX = 16;
+  const int padY = 36;
+  const int gap  = 14;
+  const int sizeCap = 8;  // hard ceiling so digits stay balanced with the face
+  int maxByW = (w - 2 * padX) / 12;          // 2 glyphs * 6 px
+  int maxByH = (h - 2 * padY - gap) / 16;    // 2 rows * 8 px
+  int size = maxByW < maxByH ? maxByW : maxByH;
+  if (size > sizeCap) size = sizeCap;
+  if (size < 1) size = 1;
+
+  g->setTextSize(size);
+  int digitW = g->textWidth(hh);
+  int rowH   = 8 * size;
+  int blockH = rowH * 2 + gap;
+  int x = x0 + (w - digitW) / 2;
+  int y = y0 + (h - blockH) / 2;
+
+  g->setTextColor(col);
+  g->setCursor(x, y);
+  g->print(hh);
+  g->setCursor(x, y + rowH + gap);
+  g->print(mm);
+}
+
+// Outlined "X" icon button (same pressed-fill pattern as the gear).
+static void drawClockClose(lgfx::LovyanGFX* g) {
+  const int x = UI_CLOCK_CLOSE_BTN_X;
+  const int y = UI_CLOCK_CLOSE_BTN_Y;
+  const int w = UI_CLOCK_CLOSE_BTN_W;
+  const int h = UI_CLOCK_CLOSE_BTN_H;
+  bool pressed = pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
+                           UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1);
+  if (pressed) g->fillRoundRect(x, y, w, h, 5, COL_PANEL_HI);
+  g->drawRoundRect(x, y, w, h, 5, COL_BORDER);
+  // Two diagonals form the X; amber keeps it an interactive affordance.
+  const int ix0 = x + 8, iy0 = y + 6, ix1 = x + w - 9, iy1 = y + h - 7;
+  g->drawLine(ix0, iy0, ix1, iy1, COL_AMBER);
+  g->drawLine(ix1, iy0, ix0, iy1, COL_AMBER);
+  // Double-stroke for weight at 1 px (no AA).
+  g->drawLine(ix0 + 1, iy0, ix1 + 1, iy1, COL_AMBER);
+  g->drawLine(ix1 - 1, iy0, ix0 - 1, iy1, COL_AMBER);
+}
+
+void uiRenderClock(lgfx::LovyanGFX* g, uint8_t mode) {
+  g->fillScreen(COL_BG);
+
+  struct tm t;
+  bool haveTime = getLocalTime(&t, 0);
+  const struct tm* tp = haveTime ? &t : nullptr;
+
+  if (mode == UI_CLOCK_MODE_ANALOG) {
+    // Big face, vertically centered; leave a little top room for the X.
+    drawAnalogFace(g, SCREEN_W / 2, SCREEN_H / 2 + 4, 92, tp);
+  } else if (mode == UI_CLOCK_MODE_DIGITAL) {
+    drawDigitalBlock(g, 0, 0, SCREEN_W, SCREEN_H, tp, true);
+  } else {
+    // Split: left half analog, right half 24h digital. Sized with margin so
+    // neither pane crowds the hairline or the screen edges.
+    const int mid = SCREEN_W / 2;
+    g->drawFastVLine(mid, 40, SCREEN_H - 56, COL_GRID);
+    drawAnalogFace(g, mid / 2, SCREEN_H / 2 + 4, 68, tp);
+    drawDigitalBlock(g, mid, 0, SCREEN_W - mid, SCREEN_H, tp, false);
+  }
+
+  drawClockClose(g);
 }
 
 // Touch feedback border, overlaid on top of the fully rendered page for one

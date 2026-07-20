@@ -12,6 +12,7 @@ enum SettingRow : uint8_t {
   ROW_NIGHT,
   ROW_NIGHT_FORCE,
   ROW_RANGEBAR,
+  ROW_SHOW_PRICE,
   ROW_COUNT
 };
 
@@ -27,6 +28,7 @@ struct Settings {
   uint8_t nightEn;      // 0 = off, 1 = red-only UI 23:00-08:00, default 1 (on)
   uint8_t nightForce;   // 0 = schedule only, 1 = force night mode on, default 0
   uint8_t rangeBar;     // 0 = hide the 24h range position bar, 1 = show, default 1
+  uint8_t showPrice;    // 0 = hide the big price + 24h change, 1 = show, default 1
 };
 extern Settings gSettings;
 
@@ -78,4 +80,5 @@ void settingsSaveRow(Preferences& p, int row);
 // (setting candle size snaps range down to 24h; setting range snaps candle
 // size up to 1h). Returns a bitmask (1u<<row) of every row that changed, so
 // the caller knows which ones to persist and re-apply; 0 if nothing changed.
-uint8_t settingsSet(int row, uint8_t idx);
+// uint16_t because ROW_COUNT can exceed 8 (uint8_t would drop bits 8+).
+uint16_t settingsSet(int row, uint8_t idx);

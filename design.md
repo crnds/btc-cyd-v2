@@ -15,7 +15,7 @@ only presentation, information architecture, and interaction patterns changed.
   feedback must be immediate.
 - 1 Hz full-frame re-render on a single thread: every visual must be cheap
   (lines, rects, circles — no alpha blending, no shadows).
-- The 20 px right-edge rule (`CONTENT_RIGHT = 300`) is kept everywhere.
+- The layout runs full width (`CONTENT_RIGHT = 320`) with no right-edge padding.
 
 ## Design system
 
@@ -112,8 +112,7 @@ content, so the data itself is the structure.
 ### 4. Visual improvements
 
 Left-aligned hero axis, one filled accent per screen, hairline-separated
-regions, consistent 4 px rhythm, and a WiFi glyph scaled to respect the
-20 px right-edge rule (radii 3/6/9).
+regions, consistent 4 px rhythm, and a WiFi glyph (radii 3/6/9).
 
 ### 5. Interaction improvements
 
@@ -257,13 +256,89 @@ dialog patterns cover any future setting without new code.
 
 ---
 
+## Full-screen clock
+
+### 1. Issues with the old design
+
+- The status-bar clock was glanceable but not ambient: living-room use
+  still required the full BTC dashboard chrome.
+- No dedicated clock presentation existed despite the product being a
+  24/7 desk clock as much as a ticker.
+
+### 2. Design decisions
+
+- **Enter from the status-bar clock.** The centered time is already the
+  clock affordance; tapping it opens a full-screen ambient page. The
+  left pulse/wifi and right date stay non-interactive so the hit zone
+  stays unambiguous.
+- **Three faces, one gesture.** Default is a 50/50 split (minimal analog
+  left, 24h digital right). Whole-screen tap cycles split → big analog →
+  big digital → split. Mode is remembered across exits so re-entry is
+  sticky.
+- **Minimal analog, design-system colors.** White face circle + tapered
+  white hour/minute hands + thin dual-accent second hand (coral body,
+  green tip) on pure `BG`. No ticks, no numerals — matches the reference
+  face and stays within the 15-color palette / no-AA budget.
+- **24h digital, no seconds.** Split pane stacks `HH` over `MM` (no
+  colon) to fill the half-width column; digital-only uses a single
+  row `HH:MM`. Both auto-pick the largest GLCD `textSize` that fits.
+- **Visible exit.** Outlined amber "X" icon button top-left (same
+  pressed-fill pattern as the gear), not a hidden back-zone convention.
+
+### 3. New layout
+
+- Split: vertical `GRID` hairline at x=160; analog face centered in the
+  left half (r≈68) with margin; digital `HH`/`MM` stacked at size ≤8
+  in the right half so neither pane feels bloated.
+- Analog-only: face centered on screen (r≈92), slight +4 y offset so
+  the X button does not clip the rim.
+- Digital-only: single-row `HH:MM`, max-scaled to the full 320×240
+  (~size 10 — width-bound by 5 glyphs).
+- Close control: drawn button at (4,4) 28×24 r=5; hit zone (0,0)–(44,36).
+
+### 4. Visual improvements
+
+Pure black field, one hairline fold in split mode, amber second hand for
+motion without adding palette entries.
+
+**Night mode:** the clock page has no private palette. Every pixel uses
+`COL_*` tokens (`BG`, `TEXT`, `TEXT3`, `AMBER`, `BORDER`, `PANEL_HI`,
+`GRID`). `renderIfDue` always calls `uiSetNightMode()` before
+`uiRenderClock`, so the face, ticks, hands, digital digits, split
+hairline, and close "X" all remap to red-luminance automatically —
+same fully-red UI as the dashboard and settings.
+
+### 5. Interaction improvements
+
+- Dashboard clock hit zone `UI_CLOCK_HIT_*` shared between draw intent
+  and touch (`btc_ticker.ino`).
+- Close hit zone `UI_CLOCK_CLOSE_*` shared the same way; whole-screen
+  taps outside it cycle modes.
+- Taps fire on release (existing debounce); no drag on this page.
+
+### 6. Accessibility improvements
+
+24h format removes AM/PM ambiguity; generous close and clock hit
+zones for resistive touch; pressed fill on the X; stacked HH/MM at
+max size keeps the time readable at arm's length.
+
+### 7. Reusable components
+
+Analog face (circle + tapered hands + hub), digital time block,
+outlined icon-button close control — candidates for any future ambient
+page.
+
+---
+
 ## Navigation & information architecture
 
-- `Dashboard ⇄ Settings list ⇄ Picker → Confirm` — four levels, one
-  gesture each, every level with a visible `<` return in the title bar
-  (left 90 px is the back zone, unchanged).
-- Page state in the .ino gained exactly one variable (`confirmIdx`) — the
-  confirm page is a property of the picker, not a new top-level page.
+- `Dashboard ⇄ Settings list ⇄ Picker → Confirm` and
+  `Dashboard ⇄ Full-screen clock` — one gesture each. Settings levels
+  keep a visible `<` return in the title bar (left 90 px back zone);
+  the clock page uses a visible amber "X" top-left instead.
+- Page state in the .ino: `Page::{DASHBOARD,SETTINGS,CLOCK}` plus
+  `clockMode` (0/1/2) and the existing `confirmIdx` (confirm remains a
+  property of the picker, not a top-level page).
 - The simulator mirrors the same state machine, so every flow can be
   exercised without hardware.
 

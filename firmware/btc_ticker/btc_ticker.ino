@@ -114,17 +114,20 @@ float dayHigh = NAN;  // 24h high/low from the ticker payload, for the range bar
 float dayLow = NAN;
 uint32_t priceOkMs = 0;
 
-enum class Page : uint8_t { DASHBOARD, SETTINGS };
+enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK };
 static Page currentPage = Page::DASHBOARD;
 static int settingsScroll = 0;  // px, 0..uiSettingsMaxScroll()
 static int pickerRow = -1;      // -1 = settings list, >=0 = option picker for that row
 static int confirmIdx = -1;     // >=0 = confirmation page showing, pending option idx for pickerRow
+static uint8_t clockMode = UI_CLOCK_MODE_SPLIT;  // cycles on whole-screen tap
 
 static void renderIfDue(bool force = false);
-static void applySettingChange(uint8_t mask);
+static void applySettingChange(uint16_t mask);
 
 // ── touch ──────────────────────────────────────────────────
-// Dashboard: gear opens Settings. Settings list: drag scrolls; tap on a
+// Dashboard: gear opens Settings; status-bar clock opens full-screen clock.
+// Full-screen clock: "X" top-left returns to dashboard; any other tap cycles
+// split → analog → digital → split. Settings list: drag scrolls; tap on a
 // binary row (On/Off) toggles it in place, tap on a multi-choice row opens
 // its option picker. Picker: tap an option to select it and return —
 // except candle size, which first shows a confirmation page because it
@@ -141,7 +144,7 @@ static bool touchFlashOn = false;  // touch level at the last handleTouch pass
 
 // Persist every row named by a settingsSet() change-mask and apply side
 // effects (brightness, job intervals, candle reset, ...).
-static void applyMask(uint8_t mask) {
+static void applyMask(uint16_t mask) {
 for (int r = 0; r < ROW_COUNT; r++) {
 if (mask & (1u << r)) settingsSaveRow(prefs, r);
 }
@@ -149,12 +152,31 @@ applySettingChange(mask);
 }
 
 static void handleTap(int tx, int ty) {
+if (currentPage == Page::CLOCK) {
+// Close "X" top-left — generous hit zone shared with ui.h drawing.
+if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
+    ty >= UI_CLOCK_CLOSE_HIT_Y0 && ty < UI_CLOCK_CLOSE_HIT_Y1) {
+currentPage = Page::DASHBOARD;
+renderIfDue(true);
+return;
+}
+// Whole-screen tap cycles the three clock presentations.
+clockMode = (uint8_t)((clockMode + 1) % UI_CLOCK_MODE_COUNT);
+renderIfDue(true);
+return;
+}
+
 if (currentPage == Page::DASHBOARD) {
 if (tx >= UI_GEAR_HIT_X0 && ty >= UI_GEAR_HIT_Y0) {
 currentPage = Page::SETTINGS;
 settingsScroll = 0;
 pickerRow = -1;
 confirmIdx = -1;
+renderIfDue(true);
+} else if (tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
+           ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
+currentPage = Page::CLOCK;
+// Keep last clockMode so re-entry restores the user's preferred face.
 renderIfDue(true);
 }
 return;
@@ -381,7 +403,7 @@ backfillNextMs = nowMs;
 }
 
 // ── apply a settings change live (called right after settingsCycle) ──
-static void applySettingChange(uint8_t mask) {
+static void applySettingChange(uint16_t mask) {
 // Brightness itself is applied by applyNightBrightness (called every
 // renderIfDue right after this), which also accounts for night-mode dim —
 // setting it here too would flash the user's chosen brightness on screen
@@ -407,8 +429,9 @@ if (mask & (1u << ROW_RANGE)) {
 backfillDoneOnce = false;
 backfillNextMs = millis();
 }
-// ROW_STYLE, ROW_NIGHT, ROW_NIGHT_FORCE and ROW_RANGEBAR need no side effect
-// — the next render reads gSettings / applies uiSetNightMode directly.
+// ROW_STYLE, ROW_NIGHT, ROW_NIGHT_FORCE, ROW_RANGEBAR and ROW_SHOW_PRICE need
+// no side effect — the next render reads gSettings / applies uiSetNightMode
+// directly (and reflows chart height when price / range bar are hidden).
 }
 
 // ── WiFi supervisor ────────────────────────────────────────
@@ -575,6 +598,8 @@ if (currentPage == Page::SETTINGS) {
   if (confirmIdx >= 0 && pickerRow >= 0) uiRenderConfirm(g, pickerRow, confirmIdx);
   else if (pickerRow >= 0) uiRenderSettingsPicker(g, pickerRow);
   else uiRenderSettings(g, settingsScroll);
+} else if (currentPage == Page::CLOCK) {
+  uiRenderClock(g, clockMode);
 } else {
 UiState st;
 st.wifiConnected = WiFi.status() == WL_CONNECTED;

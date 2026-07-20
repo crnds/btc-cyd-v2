@@ -41,9 +41,16 @@ void uiRenderSettingsPicker(lgfx::LovyanGFX* g, int row);
 // candle DB). `row`/`idx` are the pending change, shown as "OLD -> NEW".
 void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx);
 
+// Renders the full-screen clock page. `mode` cycles on whole-screen tap:
+//   0 = split (analog left 50% + 24h digital right 50%)
+//   1 = big analog only
+//   2 = big 24h digital only
+// An "X" close control sits top-left (see UI_CLOCK_CLOSE_* hit zone).
+void uiRenderClock(lgfx::LovyanGFX* g, uint8_t mode);
+
 // Overlays the 3px touch-feedback border on all 4 sides of the current
 // frame — drawn for one frame every time a touch registers. The right side
-// respects the 20px right-edge padding (stops at CONTENT_RIGHT).
+// stops at CONTENT_RIGHT.
 void uiDrawTouchFlash(lgfx::LovyanGFX* g);
 
 // Switches every UI color to red-only (night mode) or back to normal.
@@ -71,12 +78,36 @@ int uiSettingsMaxScroll();
 int uiPickerOptionAt(int row, int ty);
 
 // Dashboard: touch anywhere in this box (bottom-right corner) opens Settings.
-// The gear button itself spans roughly x=270..296 (flush with the 20px
-// right-edge padding every other element respects); this zone is deliberately
-// wider for a comfortable touch target — nothing else in the footer is
-// tappable.
+// The gear button itself spans roughly x=288..316 (flush with the right edge
+// every other element respects); this zone is deliberately wider for a
+// comfortable touch target — nothing else in the footer is tappable.
 static const int UI_GEAR_HIT_X0 = 230;
 static const int UI_GEAR_HIT_Y0 = 200;
+
+// Dashboard: tap the centered status-bar clock to enter full-screen clock.
+// Generous for resistive touch — covers HH:MM:SS plus a little padding, and
+// avoids the left status pulse/wifi and the right-side date.
+static const int UI_CLOCK_HIT_X0 = 95;
+static const int UI_CLOCK_HIT_X1 = 225;
+static const int UI_CLOCK_HIT_Y0 = 0;
+static const int UI_CLOCK_HIT_Y1 = 28;
+
+// Full-screen clock page: "X" close control top-left. Hit zone is larger than
+// the drawn glyph (resistive); drawing uses a 28x24 outlined icon button.
+static const int UI_CLOCK_CLOSE_HIT_X0 = 0;
+static const int UI_CLOCK_CLOSE_HIT_X1 = 44;
+static const int UI_CLOCK_CLOSE_HIT_Y0 = 0;
+static const int UI_CLOCK_CLOSE_HIT_Y1 = 36;
+static const int UI_CLOCK_CLOSE_BTN_X  = 4;
+static const int UI_CLOCK_CLOSE_BTN_Y  = 4;
+static const int UI_CLOCK_CLOSE_BTN_W  = 28;
+static const int UI_CLOCK_CLOSE_BTN_H  = 24;
+
+// Clock display modes for uiRenderClock / cycle-on-tap.
+static const uint8_t UI_CLOCK_MODE_SPLIT  = 0;
+static const uint8_t UI_CLOCK_MODE_ANALOG = 1;
+static const uint8_t UI_CLOCK_MODE_DIGITAL = 2;
+static const uint8_t UI_CLOCK_MODE_COUNT  = 3;
 
 // Settings page chrome, shared between drawing (ui.cpp) and hit-testing
 // (btc_ticker.ino) so they can't drift apart. List layout itself (row

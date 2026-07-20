@@ -19,7 +19,9 @@ What it does:
   reboots and power loss; backfills from `/api/v3/klines` on boot and repairs
   gaps after reconnects.
 - Shows clock (NTP, timezone `ICT-7` / Asia/Bangkok), big price, candlestick
-  chart, and device stats; a touch-driven Settings page (gear icon,
+  chart, and device stats; tap the status-bar clock for a full-screen ambient
+  clock (split analog+24h digital, or analog/digital only — cycle by tap;
+  "X" top-left returns); a touch-driven Settings page (gear icon,
   bottom-right) configures brightness, 180° flip, price/candle intervals,
   time range, chart style (Red/Green, Black/White, Line), and night mode
   (red-only UI + 5% brightness 23:00-08:00, plus manual force-on).
@@ -149,12 +151,7 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 ## Code style and conventions
 
 - Language of code, comments, and docs: **English**.
-- **20px right-edge padding** (from `CLAUDE.md`): nothing renders past
-  `CONTENT_RIGHT` (`SCREEN_W - PAD_RIGHT`, currently 300 of 320px) — on the
-  dashboard, the Settings pages, and even the touch-feedback border.
-  Right-aligned text, separator lines, and borders stop at `CONTENT_RIGHT`,
-  not `SCREEN_W`. See `ui.cpp` (`drawStatusBar`, `drawChart`,
-  `uiRenderSettings`, `uiDrawTouchFlash`).
+- **Full-width layout**: layout boundaries stop at `CONTENT_RIGHT` (`SCREEN_W`, 320px) with no right-edge padding. Right-aligned text, separator lines, and borders extend to the screen edge. See `ui.cpp` (`drawStatusBar`, `drawChart`, `uiRenderSettings`, `uiDrawTouchFlash`).
 - Comment style: dense header comments on every public function explaining
   *why* (hardware gotchas, heap budgets, design rationale), not just what.
   Match this when editing — future maintainers rely on these notes.

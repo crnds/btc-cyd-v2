@@ -725,7 +725,7 @@
         <span id="ntpIndicator" class="status-dot"></span>
       </div>
       <div class="status-item">
-        <span class="status-label">Binance API</span>
+        <span class="status-label">Market API</span>
         <span id="apiIndicator" class="status-dot"></span>
       </div>
     </div>
@@ -818,11 +818,11 @@
           </div>
           <div class="setting-row" style="margin-top:0.75rem;">
             <div>
-              <span class="setting-label">Binance API Availability</span>
+              <span class="setting-label">Market API Availability</span>
               <div class="setting-desc">Simulate server timeouts or endpoint failure</div>
             </div>
             <label class="switch">
-              <input type="checkbox" id="apiSwitch" checked aria-label="Binance API availability">
+              <input type="checkbox" id="apiSwitch" checked aria-label="Market API availability">
               <span class="slider"></span>
             </label>
           </div>
@@ -833,9 +833,16 @@
           <div class="setting-row">
             <span class="setting-label">Data Provider</span>
             <select class="select-dropdown" id="dataProviderSelect" aria-label="Data provider">
-              <option value="live">Live Binance HTTP API</option>
+              <option value="binance">Binance (BTC/USDT) — live</option>
+              <option value="binance_vision">Binance Vision (BTC/USDT) — live</option>
+              <option value="coinbase">Coinbase (BTC/USD) — live</option>
+              <option value="bitstamp">Bitstamp (BTC/USD) — live</option>
+              <option value="coingecko">CoinGecko (BTC/USD index) — live</option>
               <option value="mock">Local Trend Generator</option>
             </select>
+          </div>
+          <div class="setting-desc" style="margin-top:0.35rem;">
+            All live providers use keyless public REST APIs (browser CORS). Switching provider re-backfills the chart.
           </div>
 
           <div id="mockControls" style="display:none; margin-top:1rem; border-top: 1px solid var(--border-soft); padding-top:0.75rem;">
@@ -889,7 +896,7 @@
             <span class="status-card-val" id="backlightVal">0 (PWM 230)</span>
           </div>
           <div class="status-card">
-            <span class="status-card-label">Binance API Hits</span>
+            <span class="status-card-label">Market API Hits</span>
             <span class="status-card-val" id="apiHitsVal">0</span>
           </div>
           <div class="status-card">
@@ -1036,7 +1043,7 @@
     // Settings constants & helpers (mirrors settings.cpp / ui.cpp)
     const SETTINGS_ROW_LABELS = [
       "Brightness", "Flip screen", "Price fetch", "Candle size", "Time range", "Chart style",
-      "Night schedule", "Force night mode", "Range bar"
+      "Night schedule", "Force night mode", "Range bar", "Price"
     ];
 
     const SETTINGS_ROW_DESC = [
@@ -1048,7 +1055,8 @@
       "Candle colors, monochrome, or a line chart.",
       "Dim red-only screen from 23:00 to 08:00.",
       "Keep night mode on, ignoring the schedule.",
-      "Show today's low-to-high position bar."
+      "Show today's low-to-high position bar.",
+      "Show the live price and 24h change."
     ];
 
     const BRI_LABEL = ["5%", "25%", "50%", "75%", "100%", "Auto"];
@@ -1064,7 +1072,7 @@
     // Row enum values (settings.h)
     const ROW_BRIGHTNESS = 0, ROW_FLIP = 1, ROW_PRICE_IV = 2, ROW_CANDLE_IV = 3,
           ROW_RANGE = 4, ROW_STYLE = 5, ROW_NIGHT = 6, ROW_NIGHT_FORCE = 7,
-          ROW_RANGEBAR = 8, ROW_COUNT = 9;
+          ROW_RANGEBAR = 8, ROW_SHOW_PRICE = 9, ROW_COUNT = 10;
 
     // Grouped settings list model (mirrors SET_ITEMS in ui.cpp). Binary rows
     // (2 options) toggle in place; wider rows open the picker.
@@ -1075,6 +1083,7 @@
       { row: ROW_RANGE },
       { header: "CHART" },
       { row: ROW_STYLE },
+      { row: ROW_SHOW_PRICE },
       { row: ROW_RANGEBAR },
       { header: "DISPLAY" },
       { row: ROW_BRIGHTNESS },
@@ -1089,6 +1098,23 @@
     const UI_BACK_HIT_X1 = 90;
     const UI_GEAR_HIT_X0 = 230;
     const UI_GEAR_HIT_Y0 = 200;
+    // Dashboard status-bar clock → full-screen clock (mirrors ui.h)
+    const UI_CLOCK_HIT_X0 = 95;
+    const UI_CLOCK_HIT_X1 = 225;
+    const UI_CLOCK_HIT_Y0 = 0;
+    const UI_CLOCK_HIT_Y1 = 28;
+    const UI_CLOCK_CLOSE_HIT_X0 = 0;
+    const UI_CLOCK_CLOSE_HIT_X1 = 44;
+    const UI_CLOCK_CLOSE_HIT_Y0 = 0;
+    const UI_CLOCK_CLOSE_HIT_Y1 = 36;
+    const UI_CLOCK_CLOSE_BTN_X  = 4;
+    const UI_CLOCK_CLOSE_BTN_Y  = 4;
+    const UI_CLOCK_CLOSE_BTN_W  = 28;
+    const UI_CLOCK_CLOSE_BTN_H  = 24;
+    const UI_CLOCK_MODE_SPLIT   = 0;
+    const UI_CLOCK_MODE_ANALOG  = 1;
+    const UI_CLOCK_MODE_DIGITAL = 2;
+    const UI_CLOCK_MODE_COUNT   = 3;
     const PICK_OPTS_Y = 52;
     const UI_CONFIRM_Y0 = 168;
     const UI_CONFIRM_Y1 = 202;
@@ -1108,6 +1134,7 @@
         case ROW_NIGHT: return 2;
         case ROW_NIGHT_FORCE: return 2;
         case ROW_RANGEBAR: return 2;
+        case ROW_SHOW_PRICE: return 2;
         default: return 0;
       }
     }
@@ -1123,6 +1150,7 @@
         case ROW_NIGHT: return ONOFF_LABEL[idx];
         case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
         case ROW_RANGEBAR: return ONOFF_LABEL[idx];
+        case ROW_SHOW_PRICE: return ONOFF_LABEL[idx];
         default: return "";
       }
     }
@@ -1138,6 +1166,7 @@
         case ROW_NIGHT: return ONOFF_LABEL[gSettings.nightEn];
         case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
         case ROW_RANGEBAR: return ONOFF_LABEL[gSettings.rangeBar];
+        case ROW_SHOW_PRICE: return ONOFF_LABEL[gSettings.showPrice];
         default: return "";
       }
     }
@@ -1153,6 +1182,7 @@
         case ROW_NIGHT: return gSettings.nightEn;
         case ROW_NIGHT_FORCE: return gSettings.nightForce;
         case ROW_RANGEBAR: return gSettings.rangeBar;
+        case ROW_SHOW_PRICE: return gSettings.showPrice;
         default: return 0;
       }
     }
@@ -1195,13 +1225,21 @@
     // Screen geometry (mirrors ui.cpp)
     const SCREEN_W      = 320;
     const SCREEN_H      = 240;
-    const PAD_RIGHT     = 20;
-    const CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 300
+    const PAD_RIGHT     = 0;
+    const CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 320
     const EDGE          = 4;
-    const CHART_W       = 288;
-    const CHART_Y0      = 92;
-    const CHART_H       = 98;
-    const AXIS_Y        = 190;
+    // Chart footprint: bottom fixed at AXIS_Y; top grows into price / range-bar
+    // strips when those settings are off (mirrors ui.cpp chartY0/chartH).
+    const CHART_W        = 288;
+    const AXIS_Y         = 190;
+    const CONTENT_TOP    = 30;
+    const CHART_Y0_BOTH  = 92;   // price + range bar
+    const CHART_Y0_PRICE = 72;   // price only
+    const CHART_Y0_RANGE = 50;   // range bar only
+    const RANGE_Y_TXT_PRICE = 72;
+    const RANGE_Y_TRK_PRICE = 76;
+    const RANGE_Y_TXT_TOP   = 30;
+    const RANGE_Y_TRK_TOP   = 34;
 
     // Helper for formatting large numbers with commas
     function fmtCommas(v) {
@@ -1321,6 +1359,16 @@
         this.ctx.moveTo(x0 + 0.5, y0 + 0.5);
         this.ctx.lineTo(x1 + 0.5, y1 + 0.5);
         this.ctx.stroke();
+      }
+
+      fillTriangle(x0, y0, x1, y1, x2, y2, color) {
+        this.ctx.fillStyle = this.getColor(color);
+        this.ctx.beginPath();
+        this.ctx.moveTo(x0, y0);
+        this.ctx.lineTo(x1, y1);
+        this.ctx.lineTo(x2, y2);
+        this.ctx.closePath();
+        this.ctx.fill();
       }
 
       drawPixel(x, y, color) {
@@ -1447,6 +1495,352 @@
       }
     }
 
+    // ── KEYLESS LIVE DATA PROVIDERS ──────────────────────────
+    // Browser-side only (needs CORS). Each adapter returns a common shape:
+    //   ticker → { last, changePct, dayHigh, dayLow }
+    //   klines → [{ openEpoch, o, h, l, c }, ...] oldest → newest
+    // Firmware still talks to Binance; these are for simulator parity /
+    // offline-region testing / multi-venue comparison.
+
+    async function httpJson(url, label) {
+      let res;
+      try {
+        res = await fetch(url);
+      } catch (e) {
+        // Browser "TypeError: Failed to fetch" — usually CORS, DNS, adblock, or offline.
+        throw new Error(`${label} network error (${e.message || e})`);
+      }
+      if (!res.ok) {
+        let detail = "";
+        try { detail = (await res.text()).slice(0, 120); } catch (_) {}
+        throw new Error(`${label} HTTP ${res.status}${detail ? ": " + detail : ""}`);
+      }
+      return res.json();
+    }
+
+    // Some venues (notably Coinbase) are unreachable from certain browsers /
+    // networks even though the response would include ACAO:* (adblock, DNS,
+    // geo-filter). Fall back to a public CORS proxy that returns the body
+    // wrapped as { contents: "<json string>" }.
+    async function httpJsonResilient(url, label) {
+      try {
+        return await httpJson(url, label);
+      } catch (directErr) {
+        try {
+          const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
+          const wrap = await httpJson(proxyUrl, label + " via proxy");
+          const contents = wrap && wrap.contents;
+          if (typeof contents === "string") {
+            if (!contents.length) throw new Error("empty proxy body");
+            return JSON.parse(contents);
+          }
+          if (contents && typeof contents === "object") return contents;
+          throw new Error("unexpected proxy payload");
+        } catch (proxyErr) {
+          throw new Error(
+            `${label} failed (${directErr.message}); proxy also failed (${proxyErr.message})`
+          );
+        }
+      }
+    }
+
+    function sortKlinesAsc(klines) {
+      return klines.slice().sort((a, b) => a.openEpoch - b.openEpoch);
+    }
+
+    // Shared Binance-compatible REST (api.binance.com + data-api.binance.vision)
+    function makeBinanceStyleProvider(id, name, baseUrl) {
+      return {
+        id, name, kind: "live", quote: "USDT",
+        async fetchTicker() {
+          const d = await httpJson(`${baseUrl}/api/v3/ticker/24hr?symbol=BTCUSDT`, name);
+          return {
+            last: parseFloat(d.lastPrice),
+            changePct: parseFloat(d.priceChangePercent),
+            dayHigh: parseFloat(d.highPrice),
+            dayLow: parseFloat(d.lowPrice)
+          };
+        },
+        async fetchKlines(intervalLabel, limit) {
+          const d = await httpJson(
+            `${baseUrl}/api/v3/klines?symbol=BTCUSDT&interval=${intervalLabel}&limit=${limit}`,
+            name
+          );
+          return d.map(item => ({
+            openEpoch: Math.floor(item[0] / 1000),
+            o: parseFloat(item[1]),
+            h: parseFloat(item[2]),
+            l: parseFloat(item[3]),
+            c: parseFloat(item[4])
+          }));
+        }
+      };
+    }
+
+    const DATA_PROVIDERS = {
+      binance: makeBinanceStyleProvider(
+        "binance", "Binance", "https://api.binance.com"
+      ),
+      binance_vision: makeBinanceStyleProvider(
+        "binance_vision", "Binance Vision", "https://data-api.binance.vision"
+      ),
+
+      // Coinbase BTC-USD. *.coinbase.com is frequently unreachable from
+      // browsers ("Failed to fetch" — adblock/geo/Cloudflare), so we cascade:
+      //   1) Coinbase Exchange public REST (direct, then CORS proxy)
+      //   2) Coinbase retail v2 (direct, then CORS proxy)
+      //   3) CoinGecko "gdax" (= Coinbase Exchange) venue ticker + OHLC
+      //      — always CORS-friendly; last price is the Coinbase venue print.
+      coinbase: {
+        id: "coinbase", name: "Coinbase", kind: "live", quote: "USD",
+        _intervalSec(intervalLabel) {
+          return ({ "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 })[intervalLabel] || 300;
+        },
+        _exchangeGranularity(intervalLabel) {
+          return ({ "5m": 300, "15m": 900, "1h": 3600, "4h": 3600 })[intervalLabel] || 300;
+        },
+        _historicPeriod(intervalLabel, limit) {
+          const need = this._intervalSec(intervalLabel) * limit;
+          if (need <= 86400) return "day";
+          if (need <= 7 * 86400) return "week";
+          if (need <= 30 * 86400) return "month";
+          return "year";
+        },
+        _pricesToKlines(prices, intervalSec, limit) {
+          const buckets = new Map();
+          for (const row of prices) {
+            const t = parseInt(row.time, 10);
+            const p = parseFloat(row.price);
+            if (!Number.isFinite(t) || !Number.isFinite(p)) continue;
+            const openEpoch = Math.floor(t / intervalSec) * intervalSec;
+            const cur = buckets.get(openEpoch);
+            if (!cur) {
+              buckets.set(openEpoch, { openEpoch, o: p, h: p, l: p, c: p });
+            } else {
+              if (p > cur.h) cur.h = p;
+              if (p < cur.l) cur.l = p;
+              cur.c = p;
+            }
+          }
+          return Array.from(buckets.values())
+            .sort((a, b) => a.openEpoch - b.openEpoch)
+            .slice(-limit);
+        },
+        async _tickerFromCoinGecko() {
+          // gdax is CoinGecko's id for Coinbase Exchange.
+          const [ex, markets] = await Promise.all([
+            httpJson(
+              "https://api.coingecko.com/api/v3/exchanges/gdax/tickers?coin_ids=bitcoin",
+              "Coinbase via CoinGecko"
+            ),
+            httpJson(
+              "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin",
+              "CoinGecko markets"
+            )
+          ]);
+          const list = (ex && ex.tickers) || [];
+          const t =
+            list.find(x => x.base === "BTC" && (x.target === "USD" || x.target === "USDT")) ||
+            list[0];
+          if (!t || !Number.isFinite(parseFloat(t.last))) {
+            throw new Error("CoinGecko gdax ticker missing BTC");
+          }
+          const last = parseFloat(t.last);
+          const m = Array.isArray(markets) ? markets[0] : null;
+          return {
+            last,
+            changePct: m ? parseFloat(m.price_change_percentage_24h) : 0,
+            dayHigh: m && Number.isFinite(parseFloat(m.high_24h)) ? parseFloat(m.high_24h) : last,
+            dayLow: m && Number.isFinite(parseFloat(m.low_24h)) ? parseFloat(m.low_24h) : last
+          };
+        },
+        async _klinesFromCoinGecko(intervalLabel, limit) {
+          const sec = this._intervalSec(intervalLabel);
+          const needSec = limit * sec;
+          let days = 1;
+          if (needSec > 2 * 86400) days = 7;
+          if (needSec > 7 * 86400) days = 14;
+          if (needSec > 14 * 86400) days = 30;
+          const d = await httpJson(
+            `https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=${days}`,
+            "Coinbase chart via CoinGecko"
+          );
+          const klines = d.map(item => ({
+            openEpoch: Math.floor(item[0] / 1000),
+            o: parseFloat(item[1]),
+            h: parseFloat(item[2]),
+            l: parseFloat(item[3]),
+            c: parseFloat(item[4])
+          }));
+          return sortKlinesAsc(klines).slice(-limit);
+        },
+        async fetchTicker() {
+          // 1) Native Coinbase Exchange 24h stats
+          try {
+            const stats = await httpJsonResilient(
+              "https://api.exchange.coinbase.com/products/BTC-USD/stats",
+              "Coinbase stats"
+            );
+            const last = parseFloat(stats.last);
+            const open = parseFloat(stats.open);
+            if (Number.isFinite(last) && Number.isFinite(open)) {
+              return {
+                last,
+                changePct: open > 0 ? ((last - open) / open) * 100 : 0,
+                dayHigh: Number.isFinite(parseFloat(stats.high)) ? parseFloat(stats.high) : last,
+                dayLow: Number.isFinite(parseFloat(stats.low)) ? parseFloat(stats.low) : last
+              };
+            }
+          } catch (_) { /* try next */ }
+
+          // 2) Retail v2 spot + day series
+          try {
+            const [spot, day] = await Promise.all([
+              httpJsonResilient("https://api.coinbase.com/v2/prices/BTC-USD/spot", "Coinbase spot"),
+              httpJsonResilient(
+                "https://api.coinbase.com/v2/prices/BTC-USD/historic?period=day",
+                "Coinbase day"
+              )
+            ]);
+            const last = parseFloat(spot && spot.data && spot.data.amount);
+            const rows = (day && day.data && day.data.prices) ? day.data.prices : [];
+            if (Number.isFinite(last) && rows.length >= 2) {
+              const vals = rows.map(r => parseFloat(r.price)).filter(Number.isFinite);
+              const open = parseFloat(rows[rows.length - 1].price);
+              return {
+                last,
+                changePct: open > 0 ? ((last - open) / open) * 100 : 0,
+                dayHigh: Math.max(...vals),
+                dayLow: Math.min(...vals)
+              };
+            }
+          } catch (_) { /* try next */ }
+
+          // 3) Always-CORS fallback: CoinGecko's Coinbase Exchange venue
+          return this._tickerFromCoinGecko();
+        },
+        async fetchKlines(intervalLabel, limit) {
+          const gran = this._exchangeGranularity(intervalLabel);
+
+          // 1) Native exchange candles [time, low, high, open, close, vol]
+          try {
+            const d = await httpJsonResilient(
+              `https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=${gran}`,
+              "Coinbase candles"
+            );
+            if (Array.isArray(d) && d.length >= 2) {
+              const klines = d.map(item => ({
+                openEpoch: item[0],
+                o: parseFloat(item[3]),
+                h: parseFloat(item[2]),
+                l: parseFloat(item[1]),
+                c: parseFloat(item[4])
+              }));
+              return sortKlinesAsc(klines).slice(-limit);
+            }
+          } catch (_) { /* try next */ }
+
+          // 2) Retail historic → OHLC buckets
+          try {
+            const intervalSec = this._intervalSec(intervalLabel);
+            const period = this._historicPeriod(intervalLabel, limit);
+            const d = await httpJsonResilient(
+              `https://api.coinbase.com/v2/prices/BTC-USD/historic?period=${period}`,
+              "Coinbase historic"
+            );
+            const rows = (d && d.data && d.data.prices) ? d.data.prices : [];
+            const klines = this._pricesToKlines(rows, intervalSec, limit);
+            if (klines.length >= 2) return klines;
+          } catch (_) { /* try next */ }
+
+          // 3) CoinGecko OHLC fallback
+          const klines = await this._klinesFromCoinGecko(intervalLabel, limit);
+          if (klines.length < 2) {
+            throw new Error("Coinbase klines failed on all sources");
+          }
+          return klines;
+        }
+      },
+
+      // Bitstamp public REST (no key). BTC/USD. Full step set includes 4h.
+      bitstamp: {
+        id: "bitstamp", name: "Bitstamp", kind: "live", quote: "USD",
+        _step(intervalLabel) {
+          const map = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 };
+          return map[intervalLabel] || 300;
+        },
+        async fetchTicker() {
+          const d = await httpJson("https://www.bitstamp.net/api/v2/ticker/btcusd/", "Bitstamp");
+          return {
+            last: parseFloat(d.last),
+            changePct: parseFloat(d.percent_change_24),
+            dayHigh: parseFloat(d.high),
+            dayLow: parseFloat(d.low)
+          };
+        },
+        async fetchKlines(intervalLabel, limit) {
+          const step = this._step(intervalLabel);
+          const d = await httpJson(
+            `https://www.bitstamp.net/api/v2/ohlc/btcusd/?step=${step}&limit=${Math.min(limit, 1000)}`,
+            "Bitstamp OHLC"
+          );
+          const rows = (d && d.data && d.data.ohlc) ? d.data.ohlc : [];
+          return rows.map(r => ({
+            openEpoch: parseInt(r.timestamp, 10),
+            o: parseFloat(r.open),
+            h: parseFloat(r.high),
+            l: parseFloat(r.low),
+            c: parseFloat(r.close)
+          }));
+        }
+      },
+
+      // CoinGecko free public API (no key, rate-limited). Index price, not a
+      // single venue. OHLC granularity is auto (≈30m for 1–2 days) so candle
+      // size settings are best-effort — still useful for multi-source compare.
+      coingecko: {
+        id: "coingecko", name: "CoinGecko", kind: "live", quote: "USD",
+        async fetchTicker() {
+          const d = await httpJson(
+            "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin",
+            "CoinGecko"
+          );
+          if (!Array.isArray(d) || !d[0]) throw new Error("CoinGecko empty markets payload");
+          const m = d[0];
+          return {
+            last: parseFloat(m.current_price),
+            changePct: parseFloat(m.price_change_percentage_24h),
+            dayHigh: parseFloat(m.high_24h),
+            dayLow: parseFloat(m.low_24h)
+          };
+        },
+        async fetchKlines(intervalLabel, limit) {
+          const sec = ({ "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 })[intervalLabel] || 300;
+          // days arg: 1 → ~30m bars, 7/14 → ~4h bars. Pick the smallest window
+          // that can cover limit * interval (capped so we stay on free tier).
+          const needSec = limit * sec;
+          let days = 1;
+          if (needSec > 2 * 86400) days = 7;
+          if (needSec > 7 * 86400) days = 14;
+          if (needSec > 14 * 86400) days = 30;
+          const d = await httpJson(
+            `https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=${days}`,
+            "CoinGecko OHLC"
+          );
+          const klines = d.map(item => ({
+            openEpoch: Math.floor(item[0] / 1000),
+            o: parseFloat(item[1]),
+            h: parseFloat(item[2]),
+            l: parseFloat(item[3]),
+            c: parseFloat(item[4])
+          }));
+          return sortKlinesAsc(klines).slice(-limit);
+        }
+      },
+
+      mock: { id: "mock", name: "Local Trend Generator", kind: "mock", quote: "USD" }
+    };
+
     // ── SIMULATOR STATE ENGINE ──
     class ESP32Simulator {
       constructor() {
@@ -1480,10 +1874,11 @@
         this.lastLiveFetchTime = 0;
 
         // Settings State
-        this.currentPage = "dashboard"; // "dashboard", "settings", "settings_picker"
+        this.currentPage = "dashboard"; // "dashboard", "settings", "settings_picker", "clock"
         this.settingsScroll = 0;
         this.pickerRow = -1;
         this.confirmIdx = -1;   // >=0 = confirmation page, pending option idx
+        this.clockMode = UI_CLOCK_MODE_SPLIT;  // cycles on whole-screen tap
         this.touchIsDown = false;
         this.pressX = 0;
         this.pressY = 0;
@@ -1500,7 +1895,8 @@
           styleIdx: 0,
           nightEn: 1,
           nightForce: 0,
-          rangeBar: 1
+          rangeBar: 1,
+          showPrice: 1
         };
 
         // Database / RAM Ring Buffer
@@ -1654,6 +2050,7 @@
         // Fields added after an old save was written get their defaults
         // (the firmware's NVS load does the same via per-key defaults)
         if (this.gSettings.rangeBar === undefined) this.gSettings.rangeBar = 1;
+        if (this.gSettings.showPrice === undefined) this.gSettings.showPrice = 1;
         CANDLE_SECONDS = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
         this.applySettingChange(0xFF); // Apply all settings on load
       }
@@ -1668,7 +2065,8 @@
           styleIdx: 0,
           nightEn: 1,
           nightForce: 0,
-          rangeBar: 1
+          rangeBar: 1,
+          showPrice: 1
         };
       }
 
@@ -1729,6 +2127,7 @@
           case ROW_NIGHT: this.gSettings.nightEn = idx; break;
           case ROW_NIGHT_FORCE: this.gSettings.nightForce = idx; break;
           case ROW_RANGEBAR: this.gSettings.rangeBar = idx; break;
+          case ROW_SHOW_PRICE: this.gSettings.showPrice = idx; break;
         }
 
         // Adjust range/candle interval if count > 288 (mirrors settings.cpp)
@@ -1817,6 +2216,20 @@
       }
 
       handleTap(tx, ty) {
+        if (this.currentPage === "clock") {
+          // Close "X" top-left — same hit zone as firmware ui.h
+          if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
+              ty >= UI_CLOCK_CLOSE_HIT_Y0 && ty < UI_CLOCK_CLOSE_HIT_Y1) {
+            this.currentPage = "dashboard";
+            this.render();
+            return;
+          }
+          // Whole-screen tap cycles split → analog → digital → split
+          this.clockMode = (this.clockMode + 1) % UI_CLOCK_MODE_COUNT;
+          this.render();
+          return;
+        }
+
         if (this.currentPage === "dashboard") {
           // Gear hit bounds: bottom-right corner
           if (tx >= UI_GEAR_HIT_X0 && ty >= UI_GEAR_HIT_Y0) {
@@ -1824,6 +2237,10 @@
             this.settingsScroll = 0;
             this.pickerRow = -1;
             this.confirmIdx = -1;
+            this.render();
+          } else if (tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
+                     ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
+            this.currentPage = "clock";
             this.render();
           }
           return;
@@ -2208,109 +2625,115 @@
         this.updateInspectorUI();
       }
 
-      // Price feed fetcher (Binance API or Mock)
+      // Active provider id from the Controls dropdown (falls back to binance).
+      getDataProviderId() {
+        let id = this.dataProviderSelect ? this.dataProviderSelect.value : "binance";
+        // Migrate the old single "live" option if a stale HTML cache is open.
+        if (id === "live") id = "binance";
+        return id;
+      }
+
+      getDataProvider() {
+        return DATA_PROVIDERS[this.getDataProviderId()] || DATA_PROVIDERS.binance;
+      }
+
+      // Price feed fetcher — dispatches to the selected keyless provider or mock.
       fetchPrice() {
         this.lastLiveFetchTime = Date.now();
         this.apiHits++;
         document.getElementById("apiHitsVal").innerText = this.apiHits;
 
-        if (this.dataProviderSelect.value === "live" && this.apiSwitch.checked) {
-          // Fetch live price from Binance API (CORS enabled)
-          fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT")
-            .then(res => {
-              if (!res.ok) throw new Error("HTTP code " + res.status);
-              return res.json();
-            })
-            .then(data => {
-              this.lastPrice = parseFloat(data.lastPrice);
-              this.changePct = parseFloat(data.priceChangePercent);
-              this.dayHigh = parseFloat(data.highPrice);
-              this.dayLow = parseFloat(data.lowPrice);
-              this.priceOkMs = this.getSimMillis();
+        const provider = this.getDataProvider();
 
+        if (provider.kind === "live" && this.apiSwitch.checked) {
+          provider.fetchTicker()
+            .then(t => {
+              this.lastPrice = t.last;
+              this.changePct = t.changePct;
+              this.dayHigh = t.dayHigh;
+              this.dayLow = t.dayLow;
+              this.priceOkMs = this.getSimMillis();
               document.getElementById("apiIndicator").className = "status-dot active";
             })
             .catch(err => {
-              this.log("ERROR", "NET", "Binance HTTP price fetch failed: " + err.message);
+              this.log("ERROR", "NET", `${provider.name} price fetch failed: ${err.message}`);
               document.getElementById("apiIndicator").className = "status-dot error";
             });
-        } else {
-          // Simulated Local Trend Generator
-          const sliderVal = parseFloat(this.manualPriceSlider.value);
-          const trend = this.mockTrendSelect.value;
-
-          let currentPrice = isNaN(this.lastPrice) ? sliderVal : this.lastPrice;
-
-          // Generate trend variations
-          let change = (Math.random() - 0.5) * 50; // Random fluctuation +/- 25 USD
-          if (trend === "bull") {
-            change += 15; // Positive drift
-          } else if (trend === "bear") {
-            change -= 15; // Negative drift
-          } else if (trend === "flat") {
-            // Revert back towards selected slider price
-            change += (sliderVal - currentPrice) * 0.05;
-          }
-
-          this.lastPrice = currentPrice + change;
-          this.manualPriceSlider.value = Math.floor(this.lastPrice);
-          document.getElementById("manualPriceVal").innerText = "$" + fmtCommas(this.lastPrice);
-
-          if (isNaN(this.changePct)) this.changePct = 0.0;
-          this.changePct += (change / this.lastPrice) * 100;
-
-          // Mock has no real 24h window — grow the range with each tick so
-          // the range-position bar has something to show
-          if (isNaN(this.dayHigh) || this.lastPrice > this.dayHigh) this.dayHigh = this.lastPrice;
-          if (isNaN(this.dayLow) || this.lastPrice < this.dayLow) this.dayLow = this.lastPrice;
-
-          this.priceOkMs = this.getSimMillis();
-          document.getElementById("apiIndicator").className = "status-dot active";
+          return;
         }
+
+        // Simulated Local Trend Generator (mock, or live with API switch off)
+        const sliderVal = parseFloat(this.manualPriceSlider.value);
+        const trend = this.mockTrendSelect.value;
+
+        let currentPrice = isNaN(this.lastPrice) ? sliderVal : this.lastPrice;
+
+        // Generate trend variations
+        let change = (Math.random() - 0.5) * 50; // Random fluctuation +/- 25 USD
+        if (trend === "bull") {
+          change += 15; // Positive drift
+        } else if (trend === "bear") {
+          change -= 15; // Negative drift
+        } else if (trend === "flat") {
+          // Revert back towards selected slider price
+          change += (sliderVal - currentPrice) * 0.05;
+        }
+
+        this.lastPrice = currentPrice + change;
+        this.manualPriceSlider.value = Math.floor(this.lastPrice);
+        document.getElementById("manualPriceVal").innerText = "$" + fmtCommas(this.lastPrice);
+
+        if (isNaN(this.changePct)) this.changePct = 0.0;
+        this.changePct += (change / this.lastPrice) * 100;
+
+        // Mock has no real 24h window — grow the range with each tick so
+        // the range-position bar has something to show
+        if (isNaN(this.dayHigh) || this.lastPrice > this.dayHigh) this.dayHigh = this.lastPrice;
+        if (isNaN(this.dayLow) || this.lastPrice < this.dayLow) this.dayLow = this.lastPrice;
+
+        this.priceOkMs = this.getSimMillis();
+        document.getElementById("apiIndicator").className = "status-dot active";
       }
 
-      // Fetch klines backfill helper
+      // Fetch klines backfill helper — same provider as the price poll.
       async fetchKlines(limit) {
-        if (this.dataProviderSelect.value === "live" && this.apiSwitch.checked) {
-          try {
-            const intervalStr = CANDLE_IV_LABEL[this.gSettings.candleIvIdx];
-            const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${intervalStr}&limit=${limit}`);
-            if (!res.ok) throw new Error("HTTP code " + res.status);
-            const data = await res.json();
+        const provider = this.getDataProvider();
+        const intervalStr = CANDLE_IV_LABEL[this.gSettings.candleIvIdx];
 
-            return data.map(item => ({
-              openEpoch: Math.floor(item[0] / 1000),
-              o: parseFloat(item[1]),
-              h: parseFloat(item[2]),
-              l: parseFloat(item[3]),
-              c: parseFloat(item[4])
-            }));
-          } catch(err) {
-            this.log("ERROR", "NET", "Binance HTTP klines backfill failed: " + err.message);
+        if (provider.kind === "live" && this.apiSwitch.checked) {
+          try {
+            const klines = await provider.fetchKlines(intervalStr, limit);
+            if (!klines || klines.length < 2) {
+              this.log("WARNING", "NET", `${provider.name} klines returned ${klines ? klines.length : 0} bars`);
+              return [];
+            }
+            return klines;
+          } catch (err) {
+            this.log("ERROR", "NET", `${provider.name} klines backfill failed: ${err.message}`);
             return [];
           }
-        } else {
-          // Generate realistic mock backfill
-          let endPrice = isNaN(this.lastPrice) ? parseFloat(this.manualPriceSlider.value) : this.lastPrice;
-          let currentEpoch = Math.floor(this.simulatedTimeEpoch / CANDLE_SECONDS) * CANDLE_SECONDS;
-          let klines = [];
-
-          for (let i = 0; i < limit; i++) {
-            let offset = (limit - 1 - i) * CANDLE_SECONDS;
-            let epoch = currentEpoch - offset;
-
-            // Random walk backwards to construct O/H/L/C
-            let c = endPrice;
-            let change = (Math.random() - 0.5) * 200;
-            let o = c - change;
-            let h = Math.max(o, c) + Math.random() * 100;
-            let l = Math.min(o, c) - Math.random() * 100;
-
-            klines.push({ openEpoch: epoch, o, h, l, c });
-            endPrice = o; // walk backward
-          }
-          return klines;
         }
+
+        // Generate realistic mock backfill
+        let endPrice = isNaN(this.lastPrice) ? parseFloat(this.manualPriceSlider.value) : this.lastPrice;
+        let currentEpoch = Math.floor(this.simulatedTimeEpoch / CANDLE_SECONDS) * CANDLE_SECONDS;
+        let klines = [];
+
+        for (let i = 0; i < limit; i++) {
+          let offset = (limit - 1 - i) * CANDLE_SECONDS;
+          let epoch = currentEpoch - offset;
+
+          // Random walk backwards to construct O/H/L/C
+          let c = endPrice;
+          let change = (Math.random() - 0.5) * 200;
+          let o = c - change;
+          let h = Math.max(o, c) + Math.random() * 100;
+          let l = Math.min(o, c) - Math.random() * 100;
+
+          klines.push({ openEpoch: epoch, o, h, l, c });
+          endPrice = o; // walk backward
+        }
+        return klines;
       }
 
       // Candle assembly mechanism
@@ -2544,9 +2967,175 @@
         g.print("CONFIRM");
       }
 
+      // ── FULL-SCREEN CLOCK (mirrors uiRenderClock in ui.cpp) ──
+      // All drawing goes through LovyanGFX helpers that call getColor(),
+      // which applies redOnly() when gfx.nightMode is set (same path as
+      // the dashboard). No hardcoded RGB — night mode is fully red here too.
+      handTip(cx, cy, angle, len) {
+        return {
+          x: cx + Math.round(Math.sin(angle) * len),
+          y: cy - Math.round(Math.cos(angle) * len)
+        };
+      }
+
+      // Rectangular hand (constant width) — two triangles form a quad.
+      drawClockHand(g, cx, cy, angle, len, halfW, col) {
+        const tip = this.handTip(cx, cy, angle, len);
+        const px = Math.cos(angle);
+        const py = Math.sin(angle);
+        const bx = cx - Math.round(Math.sin(angle) * 4);
+        const by = cy + Math.round(Math.cos(angle) * 4);
+        const ox = Math.round(px * halfW);
+        const oy = Math.round(py * halfW);
+        const b1x = bx + ox, b1y = by + oy;
+        const b2x = bx - ox, b2y = by - oy;
+        const t1x = tip.x + ox, t1y = tip.y + oy;
+        const t2x = tip.x - ox, t2y = tip.y - oy;
+        g.fillTriangle(b1x, b1y, b2x, b2y, t2x, t2y, col);
+        g.fillTriangle(b1x, b1y, t1x, t1y, t2x, t2y, col);
+      }
+
+      drawSecondHand(g, cx, cy, angle, len, col) {
+        const tip = this.handTip(cx, cy, angle, len);
+        const cw = this.handTip(cx, cy, angle + Math.PI, Math.floor(len / 5));
+        g.drawLine(cw.x, cw.y, tip.x, tip.y, col);
+      }
+
+      drawAnalogFace(g, cx, cy, r, t) {
+        g.drawCircle(cx, cy, r, COL_TEXT);
+        // 12 short hour marks; 12 o'clock slightly longer (mirrors ui.cpp).
+        const TAU = Math.PI * 2;
+        const tickOut = r - 2;
+        const tickIn = r - (r >= 70 ? 10 : 7);
+        const tickIn12 = r - (r >= 70 ? 14 : 10);
+        for (let h = 0; h < 12; h++) {
+          const a = (h / 12) * TAU;
+          const iLen = (h === 0) ? tickIn12 : tickIn;
+          const o = this.handTip(cx, cy, a, tickOut);
+          const i = this.handTip(cx, cy, a, iLen);
+          g.drawLine(o.x, o.y, i.x, i.y, COL_TEXT);
+        }
+        if (t) {
+          const sec = t.sec;
+          const min = t.min + sec / 60;
+          const hr = (t.hour % 12) + min / 60;
+          const aH = (hr / 12) * TAU;
+          const aM = (min / 60) * TAU;
+          const aS = (sec / 60) * TAU;
+          this.drawClockHand(g, cx, cy, aH, Math.floor(r * 0.52), 3, COL_TEXT);
+          this.drawClockHand(g, cx, cy, aM, Math.floor(r * 0.74), 2, COL_TEXT);
+          this.drawSecondHand(g, cx, cy, aS, Math.floor(r * 0.88), COL_AMBER);
+        }
+        g.fillCircle(cx, cy, 4, COL_TEXT);
+        g.fillCircle(cx, cy, 1, COL_BG);
+      }
+
+      // 24h digital, no seconds (mirrors ui.cpp drawDigitalBlock).
+      // large (digital-only): one row "HH:MM", max size for the full screen.
+      // split pane: "HH" over "MM", max size for the half-width column.
+      drawDigitalBlock(g, x0, y0, w, h, t, large) {
+        const col = t ? COL_TEXT : COL_TEXT3;
+
+        if (large) {
+          const buf = t
+            ? `${String(t.hour).padStart(2, "0")}:${String(t.min).padStart(2, "0")}`
+            : "--:--";
+          const padX = 4;
+          const padY = 8;
+          const maxByW = Math.floor((w - 2 * padX) / 30);  // 5 * 6
+          const maxByH = Math.floor((h - 2 * padY) / 8);
+          let size = Math.min(maxByW, maxByH);
+          if (size < 1) size = 1;
+
+          g.setTextSize(size);
+          const tw = g.textWidth(buf);
+          const th = 8 * size;
+          g.setTextColor(col);
+          g.setCursor(x0 + Math.floor((w - tw) / 2), y0 + Math.floor((h - th) / 2));
+          g.print(buf);
+          return;
+        }
+
+        let hh, mm;
+        if (t) {
+          hh = String(t.hour).padStart(2, "0");
+          mm = String(t.min).padStart(2, "0");
+        } else {
+          hh = "--";
+          mm = "--";
+        }
+        // Breathing room + size cap so digits balance the analog face (ui.cpp).
+        const padX = 16;
+        const padY = 36;
+        const gap  = 14;
+        const sizeCap = 8;
+        const maxByW = Math.floor((w - 2 * padX) / 12);
+        const maxByH = Math.floor((h - 2 * padY - gap) / 16);
+        let size = Math.min(maxByW, maxByH, sizeCap);
+        if (size < 1) size = 1;
+
+        g.setTextSize(size);
+        const digitW = g.textWidth(hh);
+        const rowH = 8 * size;
+        const blockH = rowH * 2 + gap;
+        const x = x0 + Math.floor((w - digitW) / 2);
+        const y = y0 + Math.floor((h - blockH) / 2);
+
+        g.setTextColor(col);
+        g.setCursor(x, y);
+        g.print(hh);
+        g.setCursor(x, y + rowH + gap);
+        g.print(mm);
+      }
+
+      drawClockClose(g) {
+        const x = UI_CLOCK_CLOSE_BTN_X;
+        const y = UI_CLOCK_CLOSE_BTN_Y;
+        const w = UI_CLOCK_CLOSE_BTN_W;
+        const h = UI_CLOCK_CLOSE_BTN_H;
+        if (this.pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
+                           UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1)) {
+          g.fillRoundRect(x, y, w, h, 5, COL_PANEL_HI);
+        }
+        g.drawRoundRect(x, y, w, h, 5, COL_BORDER);
+        const ix0 = x + 8, iy0 = y + 6, ix1 = x + w - 9, iy1 = y + h - 7;
+        g.drawLine(ix0, iy0, ix1, iy1, COL_AMBER);
+        g.drawLine(ix1, iy0, ix0, iy1, COL_AMBER);
+        g.drawLine(ix0 + 1, iy0, ix1 + 1, iy1, COL_AMBER);
+        g.drawLine(ix1 - 1, iy0, ix0 - 1, iy1, COL_AMBER);
+      }
+
+      renderClock() {
+        const g = this.gfx;
+        g.fillScreen(COL_BG);
+
+        const haveTime = this.simulatedTimeEpoch > NTP_VALID_EPOCH;
+        let t = null;
+        if (haveTime) {
+          const dt = getICTDateTime(this.simulatedTimeEpoch);
+          t = {
+            hour: parseInt(dt.hour, 10),
+            min: parseInt(dt.minute, 10),
+            sec: parseInt(dt.second, 10)
+          };
+        }
+
+        if (this.clockMode === UI_CLOCK_MODE_ANALOG) {
+          this.drawAnalogFace(g, Math.floor(SCREEN_W / 2), Math.floor(SCREEN_H / 2) + 4, 92, t);
+        } else if (this.clockMode === UI_CLOCK_MODE_DIGITAL) {
+          this.drawDigitalBlock(g, 0, 0, SCREEN_W, SCREEN_H, t, true);
+        } else {
+          const mid = Math.floor(SCREEN_W / 2);
+          g.drawFastVLine(mid, 40, SCREEN_H - 56, COL_GRID);
+          this.drawAnalogFace(g, Math.floor(mid / 2), Math.floor(SCREEN_H / 2) + 4, 68, t);
+          this.drawDigitalBlock(g, mid, 0, SCREEN_W - mid, SCREEN_H, t, false);
+        }
+        this.drawClockClose(g);
+      }
+
       // ── LOVYANGFX FRAME RENDERER ──
       // Touch feedback border (mirrors uiDrawTouchFlash in ui.cpp): 3px on
-      // all 4 sides, right side stopping at CONTENT_RIGHT.
+      // all 4 sides, right side stopping at CONTENT_RIGHT (screen edge).
       drawTouchFlash(g) {
         g.fillRect(0, 0, CONTENT_RIGHT, 3, COL_AMBER);             // top
         g.fillRect(0, SCREEN_H - 3, CONTENT_RIGHT, 3, COL_AMBER);  // bottom
@@ -2568,12 +3157,41 @@
           this.renderSettings();
         } else if (this.currentPage === "settings_picker") {
           this.renderSettingsPicker();
+        } else if (this.currentPage === "clock") {
+          this.renderClock();
         } else {
           // ── DASHBOARD (mirrors uiRender in ui.cpp) ──
           g.fillScreen(COL_BG);
 
-          // 1. Status bar: asset tag left, clock center, date + wifi right
-          drawCaps(g, EDGE, 8, "BTC/USDT", COL_TEXT3);
+          // 1. Status bar: feed-status pulse + wifi top-left, clock center, date right
+          {
+            const now = this.getSimMillis();
+            let feedCol;
+            let pulse = false;
+            if (!this.wifiConnected) {
+              feedCol = COL_BAD;
+            } else if (this.priceOkMs === 0) {
+              feedCol = COL_TEXT2;
+              pulse = true;
+            } else {
+              const age = now - this.priceOkMs;
+              const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
+              const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
+              if (age <= freshMs) {
+                feedCol = COL_GOOD;
+                pulse = true;
+              } else {
+                feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
+              }
+            }
+            // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap.
+            const pulseX = EDGE + 3;   // 7
+            const statusY = 12;
+            const wifiX = pulseX + 3 + 4 + 9;  // 23
+            const dotOn = !pulse || (Math.floor(now / 1000) % 2 === 0);
+            if (dotOn) g.fillCircle(pulseX, statusY, 3, feedCol);
+            g.drawWifi(wifiX, statusY, this.wifiConnected ? COL_GOOD : COL_BAD);
+          }
 
           const dt = getICTDateTime(this.simulatedTimeEpoch);
           const haveTime = this.simulatedTimeEpoch > NTP_VALID_EPOCH;
@@ -2601,7 +3219,7 @@
             g.setTextSize(1);
             g.setTextColor(COL_TEXT2);
             const dateW = g.textWidth(dateStr);
-            g.setCursor(CONTENT_RIGHT - 24 - dateW, 8);  // 24px reserved for wifi
+            g.setCursor(CONTENT_RIGHT - dateW, 8);
             g.print(dateStr);
           } else {
             g.setTextSize(2);
@@ -2611,59 +3229,63 @@
             g.print("--:--");
           }
 
-          g.drawWifi(CONTENT_RIGHT - 10, 14, this.wifiConnected ? COL_GOOD : COL_BAD);
           g.drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
 
           // 2. Price hero: left-aligned "$" + digits, 24h change as a chip
-          let valStr = "--";
-          if (!isNaN(this.lastPrice)) {
-            valStr = fmtCommas(this.lastPrice + 0.5);
+          // Hidden via the "Price" settings row; chart reflows into the gap.
+          if (this.gSettings.showPrice) {
+            let valStr = "--";
+            if (!isNaN(this.lastPrice)) {
+              valStr = fmtCommas(this.lastPrice + 0.5);
+            }
+
+            g.setTextSize(2);
+            const wDollar = g.textWidth("$");
+            g.setTextSize(4);
+            const wVal = g.textWidth(valStr);
+
+            g.setTextSize(2);
+            g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT2);
+            g.setCursor(EDGE, 50);
+            g.print("$");
+
+            g.setTextSize(4);
+            g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT);
+            g.setCursor(EDGE + wDollar + 2, 34);
+            g.print(valStr);
+
+            let chipText, chipFill, chipTextCol;
+            if (!isNaN(this.changePct)) {
+              const sign = this.changePct >= 0 ? "+" : "";
+              chipText = `${sign}${this.changePct.toFixed(2)}%`;
+              chipFill = this.changePct >= 0 ? COL_GOOD : COL_BAD;
+              chipTextCol = COL_BG;
+            } else {
+              chipText = this.wifiConnected ? "CONNECTING" : "OFFLINE";
+              chipFill = COL_PANEL;
+              chipTextCol = this.wifiConnected ? COL_TEXT2 : COL_BAD;
+            }
+            g.setTextSize(2);
+            const chipTextW = g.textWidth(chipText);
+            const chipW = chipTextW + 16;
+            let chipX = EDGE + wDollar + 2 + wVal + 10;
+            if (chipX + chipW > CONTENT_RIGHT) chipX = CONTENT_RIGHT - chipW;
+            g.fillRoundRect(chipX, 39, chipW, 22, 6, chipFill);
+            g.setTextColor(chipTextCol);
+            g.setCursor(chipX + 8, 43);
+            g.print(chipText);
           }
-
-          g.setTextSize(2);
-          const wDollar = g.textWidth("$");
-          g.setTextSize(4);
-          const wVal = g.textWidth(valStr);
-
-          g.setTextSize(2);
-          g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT2);
-          g.setCursor(EDGE, 50);
-          g.print("$");
-
-          g.setTextSize(4);
-          g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT);
-          g.setCursor(EDGE + wDollar + 2, 34);
-          g.print(valStr);
-
-          let chipText, chipFill, chipTextCol;
-          if (!isNaN(this.changePct)) {
-            const sign = this.changePct >= 0 ? "+" : "";
-            chipText = `${sign}${this.changePct.toFixed(2)}%`;
-            chipFill = this.changePct >= 0 ? COL_GOOD : COL_BAD;
-            chipTextCol = COL_BG;
-          } else {
-            chipText = this.wifiConnected ? "CONNECTING" : "OFFLINE";
-            chipFill = COL_PANEL;
-            chipTextCol = this.wifiConnected ? COL_TEXT2 : COL_BAD;
-          }
-          g.setTextSize(2);
-          const chipTextW = g.textWidth(chipText);
-          const chipW = chipTextW + 16;
-          let chipX = EDGE + wDollar + 2 + wVal + 10;
-          if (chipX + chipW > CONTENT_RIGHT) chipX = CONTENT_RIGHT - chipW;
-          g.fillRoundRect(chipX, 39, chipW, 22, 6, chipFill);
-          g.setTextColor(chipTextCol);
-          g.setCursor(chipX + 8, 43);
-          g.print(chipText);
 
           // 3. 24h range bar: full-width low ────●──── high track
+          // Sits under the price hero, or under the status bar when price is hidden.
           if (this.gSettings.rangeBar && !isNaN(this.lastPrice) && !isNaN(this.dayHigh) && !isNaN(this.dayLow) && this.dayHigh > this.dayLow) {
             const lowStr = fmtCommas(this.dayLow + 0.5);
             const highStr = fmtCommas(this.dayHigh + 0.5);
             g.setTextSize(1);
             const wLow = g.textWidth(lowStr);
             const wHigh = g.textWidth(highStr);
-            const Y_TXT = 72, Y_TRK = 76;
+            const Y_TXT = this.gSettings.showPrice ? RANGE_Y_TXT_PRICE : RANGE_Y_TXT_TOP;
+            const Y_TRK = this.gSettings.showPrice ? RANGE_Y_TRK_PRICE : RANGE_Y_TRK_TOP;
             const xL = EDGE + wLow + 8;
             const xH = CONTENT_RIGHT - wHigh - 8;
 
@@ -2683,11 +3305,18 @@
           }
 
           // 4. Chart: gridlines, candles/line, axis labels, last-price marker
+          // Stretch upward into price / range-bar strips when those rows are off.
+          let CHART_Y0;
+          if (this.gSettings.showPrice && this.gSettings.rangeBar) CHART_Y0 = CHART_Y0_BOTH;
+          else if (this.gSettings.showPrice) CHART_Y0 = CHART_Y0_PRICE;
+          else if (this.gSettings.rangeBar) CHART_Y0 = CHART_Y0_RANGE;
+          else CHART_Y0 = CONTENT_TOP;
+          const CHART_H = AXIS_Y - CHART_Y0;
           const candleSeconds = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
           const count = Math.min(288, Math.floor(RANGE_SEC[this.gSettings.rangeIdx] / candleSeconds));
-          const cw = Math.max(1, Math.floor(CHART_W / count));
-          const plotW = cw * count;
-          const x0 = CONTENT_RIGHT - 2 - plotW;
+
+          const x0 = EDGE;  // 4
+          const plotW = CONTENT_RIGHT - 2 - x0;  // 314
 
           const visibleBuf = new Array(count);
           const validBuf = new Array(count).fill(false);
@@ -2752,14 +3381,10 @@
             g.drawFastHLine(x0, yMin, plotW, COL_GRID);
 
             const style = this.gSettings.styleIdx;
-            if (style === 2) { // STYLE_LINE: dim area + 2px amber line
-              for (let i = 0; i < count; i++) {
-                if (!validBuf[i]) continue;
-                const r = visibleBuf[i];
-                const cx = x0 + i * cw + Math.floor(cw / 2);
-                const cy = priceToY(r.c);
-                g.drawFastVLine(cx, cy + 1, CHART_Y0 + CHART_H - 1 - cy, COL_AMBER_DIM);
-              }
+            if (style === 2) { // STYLE_LINE: solid dim area under polyline + 2px amber line
+              // Quad per segment (two triangles) so spaced candles fill solidly
+              // instead of one VLine-per-sample looking like vertical strips.
+              const yBot = CHART_Y0 + CHART_H - 1;
               let havePrev = false;
               let prevX = 0, prevY = 0;
               for (let i = 0; i < count; i++) {
@@ -2768,12 +3393,20 @@
                   continue;
                 }
                 const r = visibleBuf[i];
-                const cx = x0 + i * cw + Math.floor(cw / 2);
+                const cx = x0 + Math.floor((i * plotW + plotW / 2) / count);
                 const cy = priceToY(r.c);
                 if (havePrev) {
+                  if (cx === prevX) {
+                    const top = Math.min(prevY, cy);
+                    if (yBot > top) g.drawFastVLine(cx, top + 1, yBot - top, COL_AMBER_DIM);
+                  } else {
+                    g.fillTriangle(prevX, prevY, cx, cy, cx, yBot, COL_AMBER_DIM);
+                    g.fillTriangle(prevX, prevY, cx, yBot, prevX, yBot, COL_AMBER_DIM);
+                  }
                   g.drawLine(prevX, prevY, cx, cy, COL_AMBER);
                   g.drawLine(prevX, prevY + 1, cx, cy + 1, COL_AMBER);
                 } else {
+                  if (yBot > cy) g.drawFastVLine(cx, cy + 1, yBot - cy, COL_AMBER_DIM);
                   g.drawPixel(cx, cy, COL_AMBER);
                   g.drawPixel(cx, cy + 1, COL_AMBER);
                 }
@@ -2785,7 +3418,9 @@
               for (let i = 0; i < count; i++) {
                 if (!validBuf[i]) continue;
                 const r = visibleBuf[i];
-                const cx = x0 + i * cw;
+                const cx = x0 + Math.floor((i * plotW) / count);
+                const nextX = x0 + Math.floor(((i + 1) * plotW) / count);
+                const cw = nextX - cx;
                 const wickX = cx + Math.floor(cw / 2);
                 const bull = r.c >= r.o;
                 const forming = haveBucket && (i === count - 1);
@@ -2833,19 +3468,25 @@
               g.print(s);
             }
 
-            // Last-price marker: dashed line + right-edge tag
+            // Last-price marker: dashed line + price tag centered on the chart
             if (!isNaN(this.lastPrice)) {
               let yP = priceToY(this.lastPrice);
               if (yP < CHART_Y0 + 5) yP = CHART_Y0 + 5;
               if (yP > CHART_Y0 + CHART_H - 7) yP = CHART_Y0 + CHART_H - 7;
               const tag = fmtCommas(this.lastPrice + 0.5);
               const tagW = g.textWidth(tag);
-              for (let x = x0; x < x0 + plotW - tagW - 8; x += 7) {
+              const tagBoxW = tagW + 6;
+              const tagBoxX = x0 + Math.floor((plotW - tagBoxW) / 2);
+              // Dash left of the tag, then right of it — leave a gap for the label.
+              for (let x = x0; x + 4 <= tagBoxX - 2; x += 7) {
                 g.drawFastHLine(x, yP, 4, COL_AMBER_DIM);
               }
-              g.fillRect(x0 + plotW - tagW - 6, yP - 5, tagW + 6, 11, COL_BG);
+              for (let x = tagBoxX + tagBoxW + 2; x + 4 <= x0 + plotW; x += 7) {
+                g.drawFastHLine(x, yP, 4, COL_AMBER_DIM);
+              }
+              g.fillRect(tagBoxX, yP - 5, tagBoxW, 11, COL_BG);
               g.setTextColor(COL_AMBER);
-              g.setCursor(x0 + plotW - tagW - 4, yP - 4);
+              g.setCursor(tagBoxX + 2, yP - 4);
               g.print(tag);
             }
 
@@ -2862,7 +3503,7 @@
               if (!validBuf[i]) continue;
               const r = visibleBuf[i];
               if (r.openEpoch % tickSec !== 0) continue;
-              const cx = x0 + i * cw + Math.floor(cw / 2);
+              const cx = x0 + Math.floor((i * plotW + plotW / 2) / count);
               g.drawFastVLine(cx, AXIS_Y, 4, COL_BORDER);
               const tdt = getICTDateTime(r.openEpoch);
               const lb = dayLabels ? `${tdt.mday}` : `${tdt.hour}`;
@@ -2875,42 +3516,13 @@
             }
           }
 
-          // 5. Footer: labeled feed status, muted device stats, gear button
+          // 5. Footer: muted device stats + gear (feed pulse is in the status bar)
           g.drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
-
-          const now = this.getSimMillis();
-          let txt, col;
-          let pulse = false;
-          if (!this.wifiConnected) {
-            txt = "OFFLINE";
-            col = COL_BAD;
-          } else if (this.priceOkMs === 0) {
-            txt = "CONNECTING";
-            col = COL_TEXT2;
-            pulse = true;
-          } else {
-            // Freshness is judged against the configured poll cadence
-            const age = now - this.priceOkMs;
-            const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
-            const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
-            if (age <= freshMs) {
-              txt = "LIVE";
-              col = COL_GOOD;
-              pulse = true;
-            } else {
-              col = age <= staleMs ? COL_AMBER : COL_BAD;
-              txt = age < 60000 ? `STALE ${Math.floor(age / 1000)}s` : `STALE ${Math.floor(age / 60000)}m`;
-            }
-          }
-
-          const dotOn = !pulse || (Math.floor(now / 1000) % 2 === 0);
-          if (dotOn) g.fillCircle(7, 222, 3, col);
-          drawCaps(g, 14, 219, txt, col);
 
           const pad2 = (n) => String(n).padStart(2, '0');
           g.setTextSize(1);
           g.setTextColor(COL_TEXT3);
-          g.setCursor(EDGE, 230);
+          g.setCursor(EDGE, 222);
           g.print(`CPU ${pad2(this.cpuPct)}%  RAM ${pad2(this.ramPct)}%  ROM ${pad2(this.romPct)}%`);
 
           // Settings button: outlined hit target, flush with CONTENT_RIGHT
@@ -3003,12 +3615,33 @@
         });
       });
 
-      // Price Provider Selection Toggle
+      // Price Provider Selection Toggle — live providers re-backfill on switch
+      // so the chart reflects the new venue instead of a mixed ring.
       const dataSelect = document.getElementById("dataProviderSelect");
       const mockDiv = document.getElementById("mockControls");
+      const refreshProviderUI = () => {
+        const id = dataSelect.value === "live" ? "binance" : dataSelect.value;
+        if (dataSelect.value === "live") dataSelect.value = "binance";
+        mockDiv.style.display = id === "mock" ? "block" : "none";
+      };
+      refreshProviderUI();
       dataSelect.addEventListener("change", () => {
-        mockDiv.style.display = dataSelect.value === "mock" ? "block" : "none";
-        sim.log("INFO", "NET", `Switched pricing data provider to: ${dataSelect.value}`);
+        refreshProviderUI();
+        const provider = DATA_PROVIDERS[dataSelect.value] || DATA_PROVIDERS.binance;
+        sim.log("INFO", "NET", `Switched pricing data provider to: ${provider.name}`);
+        // Wipe in-RAM ring + force a fresh klines pull for the new source.
+        if (provider.kind === "live") {
+          sim.candleRing = new Array(CANDLE_COUNT).fill(null).map(() => ({ openEpoch: 0, o: 0, h: 0, l: 0, c: 0 }));
+          sim.formingCandle = { openEpoch: 0, o: 0, h: 0, l: 0, c: 0 };
+          sim.backfillDoneOnce = false;
+          sim.backfillBackoff = 1000;
+          sim.backfillNextMs = 0;
+          sim.lastPrice = NaN;
+          sim.changePct = NaN;
+          sim.dayHigh = NaN;
+          sim.dayLow = NaN;
+          sim.priceOkMs = 0;
+        }
       });
 
       // Simulation Speed slider
