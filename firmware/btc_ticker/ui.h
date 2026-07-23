@@ -41,6 +41,14 @@ void uiRenderSettingsPicker(lgfx::LovyanGFX* g, int row);
 // candle DB). `row`/`idx` are the pending change, shown as "OLD -> NEW".
 void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx);
 
+// Renders the full-screen "Find Access Mode" Wi-Fi setup page shown after
+// confirming Forget Wi-Fi network: `apSsid` (the SoftAP network name) +
+// portal URL + a Cancel button (reboots immediately, which is safe — see
+// wifi_creds.h/wifi_portal.h for why an aborted setup always falls back to
+// the compiled config.h network). Takes the SSID as a parameter rather than
+// including wifi_portal.h, so ui.cpp stays presentation-only.
+void uiRenderWifiSetup(lgfx::LovyanGFX* g, const char* apSsid);
+
 // Renders the full-screen clock page. `mode` cycles on whole-screen tap:
 //   0 = split (analog left 50% + 24h digital right 50%)
 //   1 = big analog only
@@ -123,3 +131,9 @@ static const int UI_CONFIRM_CANCEL_X0 = 30;
 static const int UI_CONFIRM_CANCEL_X1 = 150;
 static const int UI_CONFIRM_OK_X0 = 170;
 static const int UI_CONFIRM_OK_X1 = 290;
+
+// Wi-Fi setup page (uiRenderWifiSetup) Cancel button, shared with hit-testing.
+static const int UI_WIFI_SETUP_CANCEL_X0 = 100;
+static const int UI_WIFI_SETUP_CANCEL_X1 = 220;
+static const int UI_WIFI_SETUP_CANCEL_Y0 = 190;
+static const int UI_WIFI_SETUP_CANCEL_Y1 = 224;

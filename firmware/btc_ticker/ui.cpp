@@ -117,8 +117,10 @@ static const int EDGE          = 4;  // standard left inset
 static const int CHART_W       = 288;
 static const int AXIS_Y        = 190;  // x-axis hairline; labels live 196..204
 static const int CONTENT_TOP   = 30;   // first content row under the status bar
+static const int CONTENT_TOP_NO_STATUS = EDGE;  // status bar fully empty (no clock, no date)
 // Stacked layout tops (plot is [y0, AXIS_Y)):
-//   price+range → 92, price only → 72, range only → 50, neither → 30
+//   price+range → 92, price only → 72, range only → 50, neither → 30 (or 4
+//   if the clock and date are both hidden too — see chartY0())
 static const int CHART_Y0_BOTH  = 92;
 static const int CHART_Y0_PRICE = 72;
 static const int CHART_Y0_RANGE = 50;
@@ -131,11 +133,15 @@ static const int RANGE_Y_TRK_TOP   = 34;
 
 // Layout depends on the Price / Range bar toggles only (not data
 // availability) so the chart doesn't jump when the first payload arrives.
+// When neither claims the space, the chart also reclaims the status bar
+// strip itself once it's genuinely empty (clock and date both hidden) —
+// otherwise it stays under the fixed CONTENT_TOP so the date has room.
 static int chartY0() {
   if (gSettings.showPrice && gSettings.rangeBar) return CHART_Y0_BOTH;
   if (gSettings.showPrice) return CHART_Y0_PRICE;
   if (gSettings.rangeBar) return CHART_Y0_RANGE;
-  return CONTENT_TOP;
+  if (gSettings.showClock || gSettings.showDate) return CONTENT_TOP;
+  return CONTENT_TOP_NO_STATUS;
 }
 static int chartH() { return AXIS_Y - chartY0(); }
 
@@ -238,63 +244,46 @@ static void drawGear(lgfx::LovyanGFX* g, int cx, int cy, uint16_t col) {
 }
 
 // ── STATUS BAR (y 0..24) ───────────────────────────────────
-// Feed-status pulse + wifi glyph top-left, clock centered, date right.
-// Pulse color encodes freshness (green live / amber stale / red offline);
-// it blinks while connecting or while the feed is fresh.
+// Clock centered, date right — either can be hidden independently. Feed-
+// status pulse + wifi glyph live in the footer now, next to the activity
+// stats — see drawFooter(). When both clock and date are hidden the whole
+// strip goes blank and chartY0() reclaims it for the chart.
 static void drawStatusBar(lgfx::LovyanGFX* g, const UiState& st) {
-  uint32_t now = millis();
-  uint16_t feedCol;
-  bool pulse = false;
-  if (!st.wifiConnected) {
-    feedCol = COL_BAD;
-  } else if (st.priceOkMs == 0) {
-    feedCol = COL_TEXT2;
-    pulse = true;
-  } else {
-    // Freshness is judged against the configured poll cadence: at a 5m
-    // interval a 45s-old price is still "live", not "stale".
-    uint32_t age = now - st.priceOkMs;
-    uint32_t freshMs = 2 * settingsPriceIntervalMs() + 3000;
-    uint32_t staleMs = 4 * settingsPriceIntervalMs() + 30000;
-    if (age <= freshMs) {
-      feedCol = COL_GOOD;
-      pulse = true;
-    } else {
-      feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
-    }
-  }
-  // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap between them.
-  const int pulseX = EDGE + 3;   // 7
-  const int statusY = 12;
-  const int wifiX = pulseX + 3 + 4 + 9;  // 23 — clear of the pulse
-  bool dotOn = !pulse || ((now / 1000) % 2 == 0);
-  if (dotOn) g->fillCircle(pulseX, statusY, 3, feedCol);
-  drawWifi(g, wifiX, statusY, st.wifiConnected ? COL_GOOD : COL_BAD);
-
   struct tm t;
   bool haveTime = getLocalTime(&t, 0);
-  if (haveTime) {
-    char buf[6];
-    snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
-    char sbuf[4];
-    snprintf(sbuf, sizeof(sbuf), ":%02d", t.tm_sec);
 
-    g->setTextSize(2);
-    int w1 = g->textWidth(buf);
-    g->setTextSize(1);
-    int w2 = g->textWidth(sbuf);
-    int startX = (SCREEN_W - w1 - w2) / 2;
+  if (gSettings.showClock) {
+    if (haveTime) {
+      char buf[6];
+      snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
+      char sbuf[4];
+      snprintf(sbuf, sizeof(sbuf), ":%02d", t.tm_sec);
 
-    g->setTextSize(2);
-    g->setTextColor(COL_TEXT);
-    g->setCursor(startX, 4);
-    g->print(buf);
+      g->setTextSize(2);
+      int w1 = g->textWidth(buf);
+      g->setTextSize(1);
+      int w2 = g->textWidth(sbuf);
+      int startX = (SCREEN_W - w1 - w2) / 2;
 
-    g->setTextSize(1);
-    g->setTextColor(COL_TEXT3);
-    g->setCursor(startX + w1, 11);
-    g->print(sbuf);
+      g->setTextSize(2);
+      g->setTextColor(COL_TEXT);
+      g->setCursor(startX, 4);
+      g->print(buf);
 
+      g->setTextSize(1);
+      g->setTextColor(COL_TEXT3);
+      g->setCursor(startX + w1, 11);
+      g->print(sbuf);
+    } else {
+      g->setTextSize(2);
+      g->setTextColor(COL_TEXT3);
+      int w = g->textWidth("--:--");
+      g->setCursor((SCREEN_W - w) / 2, 4);
+      g->print("--:--");
+    }
+  }
+
+  if (haveTime && gSettings.showDate) {
     static const char* wdays[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
     static const char* mons[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -305,15 +294,11 @@ static void drawStatusBar(lgfx::LovyanGFX* g, const UiState& st) {
     int dateW = g->textWidth(dbuf);
     g->setCursor(CONTENT_RIGHT - dateW, 8);
     g->print(dbuf);
-  } else {
-    g->setTextSize(2);
-    g->setTextColor(COL_TEXT3);
-    int w = g->textWidth("--:--");
-    g->setCursor((SCREEN_W - w) / 2, 4);
-    g->print("--:--");
   }
 
-  g->drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
+  if (gSettings.showClock || gSettings.showDate) {
+    g->drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
+  }
 }
 
 // ── PRICE HERO (y 30..66) ──────────────────────────────────
@@ -604,17 +589,49 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
 }
 
 // ── FOOTER (y 212..238) ────────────────────────────────────
-// Device stats as a muted micro-line + the settings gear as an outlined
-// button. Feed freshness lives as the pulsing dot in the status bar.
+// Feed-status pulse + wifi glyph left, device stats as a muted micro-line
+// next to them, and the settings gear as an outlined button on the right.
+// Pulse color encodes freshness (green live / amber stale / red offline);
+// it blinks while connecting or while the feed is fresh.
 static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
   g->drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
+
+  uint32_t now = millis();
+  uint16_t feedCol;
+  bool pulse = false;
+  if (!st.wifiConnected) {
+    feedCol = COL_BAD;
+  } else if (st.priceOkMs == 0) {
+    feedCol = COL_TEXT2;
+    pulse = true;
+  } else {
+    // Freshness is judged against the configured poll cadence: at a 5m
+    // interval a 45s-old price is still "live", not "stale".
+    uint32_t age = now - st.priceOkMs;
+    uint32_t freshMs = 2 * settingsPriceIntervalMs() + 3000;
+    uint32_t staleMs = 4 * settingsPriceIntervalMs() + 30000;
+    if (age <= freshMs) {
+      feedCol = COL_GOOD;
+      pulse = true;
+    } else {
+      feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
+    }
+  }
+  // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap between them,
+  // vertically centered on the footer row (same center as the gear button).
+  const int pulseX = EDGE + 3;   // 7
+  const int statusY = 226;
+  const int wifiX = pulseX + 3 + 4 + 9;  // 23 — clear of the pulse
+  bool dotOn = !pulse || ((now / 500) % 2 == 0);  // 500ms on / 500ms off
+  if (dotOn) g->fillCircle(pulseX, statusY, 3, feedCol);
+  drawWifi(g, wifiX, statusY, st.wifiConnected ? COL_GOOD : COL_BAD);
 
   char stats[32];
   snprintf(stats, sizeof(stats), "CPU %02u%%  RAM %02u%%  ROM %02u%%",
            (unsigned)st.cpuPct, (unsigned)st.ramPct, (unsigned)st.romPct);
   g->setTextSize(1);
   g->setTextColor(COL_TEXT3);
-  g->setCursor(EDGE, 222);
+  g->setCursor(wifiX + 9 + 6, 222);
   g->print(stats);
 
   // Settings button: outlined hit-target look, flush with CONTENT_RIGHT.
@@ -636,10 +653,13 @@ void uiRender(lgfx::LovyanGFX* g, const UiState& st) {
 // ── SETTINGS: MODEL ────────────────────────────────────────
 static const char* const SETTINGS_ROW_LABELS[ROW_COUNT] = {
   "Brightness", "Flip screen", "Price fetch", "Candle size", "Time range", "Chart style",
-  "Night schedule", "Force night mode", "Range bar", "Price"
+  "Night schedule", "Force night mode", "Range bar", "Price", "Date", "Clock", "Forget Wi-Fi network"
 };
 
-// One-line explanation shown on each option-picker page.
+// One-line explanation shown on each option-picker page. ROW_FORGET_AP has no
+// entry that's ever shown — it skips the picker and goes straight to the
+// confirmation page (see handleTap() in btc_ticker.ino), so its slot here is
+// unused filler to keep the array sized ROW_COUNT.
 static const char* const SETTINGS_ROW_DESC[ROW_COUNT] = {
   "Backlight level. Auto follows ambient light.",
   "Rotate the screen 180 degrees.",
@@ -650,7 +670,10 @@ static const char* const SETTINGS_ROW_DESC[ROW_COUNT] = {
   "Dim red-only screen from 23:00 to 08:00.",
   "Keep night mode on, ignoring the schedule.",
   "Show today's low-to-high position bar.",
-  "Show the live price and 24h change."
+  "Show the live price and 24h change.",
+  "Show the date in the top status bar.",
+  "Show the time in the top status bar.",
+  ""
 };
 
 // Visual order of the grouped list — independent of the ROW_* enum so the
@@ -669,8 +692,12 @@ static const SetItem SET_ITEMS[] = {
   {0xFF, "DISPLAY"},
   {ROW_BRIGHTNESS, nullptr},
   {ROW_FLIP, nullptr},
+  {ROW_SHOW_CLOCK, nullptr},
+  {ROW_SHOW_DATE, nullptr},
   {ROW_NIGHT, nullptr},
   {ROW_NIGHT_FORCE, nullptr},
+  {0xFF, "NETWORK"},
+  {ROW_FORGET_AP, nullptr},
 };
 static const int SET_ITEM_COUNT = sizeof(SET_ITEMS) / sizeof(SET_ITEMS[0]);
 static const int SET_HDR_H = 26;
@@ -762,9 +789,11 @@ void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx) {
     }
 
     // Label in the secondary voice; the value is the information, so it
-    // gets the primary color.
+    // gets the primary color. Exception: Forget Wi-Fi network is a
+    // destructive action, not a value — its label carries that signal in
+    // COL_BAD instead (paired with the label text itself, never color alone).
     g->setTextSize(1);
-    g->setTextColor(COL_TEXT2);
+    g->setTextColor(row == ROW_FORGET_AP ? COL_BAD : COL_TEXT2);
     g->setCursor(12, y + (SET_ROW_H - 8) / 2);
     g->print(SETTINGS_ROW_LABELS[row]);
 
@@ -849,29 +878,35 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
   g->setCursor(154, 48);
   g->print("!");
 
-  const char* title = "CLEAR CHART HISTORY?";
+  bool forgetAp = row == ROW_FORGET_AP;
+  const char* title = forgetAp ? "FORGET WI-FI NETWORK?" : "CLEAR CHART HISTORY?";
   g->setTextColor(COL_TEXT);
   g->setCursor((SCREEN_W - g->textWidth(title)) / 2, 84);
   g->print(title);
 
   g->setTextSize(1);
   g->setTextColor(COL_TEXT2);
-  const char* l1 = "Changing the candle size erases the";
-  const char* l2 = "stored chart history and re-downloads it.";
+  const char* l1 = forgetAp ? "The board will disconnect and start a" :
+                              "Changing the candle size erases the";
+  const char* l2 = forgetAp ? "setup hotspot for your phone to rejoin it." :
+                              "stored chart history and re-downloads it.";
   g->setCursor((SCREEN_W - g->textWidth(l1)) / 2, 106);
   g->print(l1);
   g->setCursor((SCREEN_W - g->textWidth(l2)) / 2, 116);
   g->print(l2);
 
-  // The pending change, e.g. "5m -> 15m".
-  char preview[24];
-  snprintf(preview, sizeof(preview), "%s -> %s",
-           settingsOptionLabel(row, settingsOptionIndex(row)),
-           settingsOptionLabel(row, idx));
-  g->setTextSize(2);
-  g->setTextColor(COL_AMBER);
-  g->setCursor((SCREEN_W - g->textWidth(preview)) / 2, 132);
-  g->print(preview);
+  // The pending change, e.g. "5m -> 15m" — not applicable to Forget Wi-Fi
+  // network, which isn't a value change, so it's skipped there.
+  if (!forgetAp) {
+    char preview[24];
+    snprintf(preview, sizeof(preview), "%s -> %s",
+             settingsOptionLabel(row, settingsOptionIndex(row)),
+             settingsOptionLabel(row, idx));
+    g->setTextSize(2);
+    g->setTextColor(COL_AMBER);
+    g->setCursor((SCREEN_W - g->textWidth(preview)) / 2, 132);
+    g->print(preview);
+  }
 
   // Buttons. Hit zones live in ui.h (UI_CONFIRM_*).
   if (pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0, UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1)) {
@@ -895,6 +930,62 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
   g->setTextColor(COL_BG);
   g->setCursor(UI_CONFIRM_OK_X0 + 18, UI_CONFIRM_Y0 + 9);
   g->print("CONFIRM");
+}
+
+// ── WI-FI SETUP ("FIND ACCESS MODE") ───────────────────────
+// Shown after confirming Forget Wi-Fi network. Purely informational — data
+// entry happens on the phone's own keyboard via the captive portal
+// (wifi_portal.*), not on this resistive touch panel. Cancel reboots
+// immediately; that's always safe (see wifi_creds.h) because credentials
+// were already cleared here and nothing new has been saved yet.
+void uiRenderWifiSetup(lgfx::LovyanGFX* g, const char* apSsid) {
+  g->fillScreen(COL_BG);
+
+  const char* title = "SETUP MODE";
+  g->setTextSize(2);
+  g->setTextColor(COL_AMBER);
+  g->setCursor((SCREEN_W - g->textWidth(title)) / 2, 20);
+  g->print(title);
+
+  const char* l1 = "CONNECT YOUR PHONE TO";
+  drawCaps(g, (SCREEN_W - capsWidth(l1)) / 2, 64, l1, COL_TEXT3);
+
+  g->setTextSize(2);
+  g->setTextColor(COL_TEXT);
+  int w = g->textWidth(apSsid);
+  g->setCursor((SCREEN_W - w) / 2, 78);
+  g->print(apSsid);
+
+  const char* l2 = "THEN OPEN";
+  drawCaps(g, (SCREEN_W - capsWidth(l2)) / 2, 108, l2, COL_TEXT3);
+
+  const char* url = "http://192.168.4.1";
+  g->setTextSize(2);
+  g->setTextColor(COL_TEXT);
+  w = g->textWidth(url);
+  g->setCursor((SCREEN_W - w) / 2, 122);
+  g->print(url);
+
+  g->drawFastHLine(EDGE, 152, CONTENT_RIGHT - EDGE, COL_GRID);
+  const char* note = "Cancel keeps the current network.";
+  g->setTextSize(1);
+  g->setTextColor(COL_TEXT3);
+  g->setCursor((SCREEN_W - g->textWidth(note)) / 2, 162);
+  g->print(note);
+
+  // Cancel button — same outlined/pressed-fill pattern as the confirm page.
+  bool pressed = pressedIn(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0,
+                           UI_WIFI_SETUP_CANCEL_X1, UI_WIFI_SETUP_CANCEL_Y1);
+  int bw = UI_WIFI_SETUP_CANCEL_X1 - UI_WIFI_SETUP_CANCEL_X0;
+  int bh = UI_WIFI_SETUP_CANCEL_Y1 - UI_WIFI_SETUP_CANCEL_Y0;
+  if (pressed) {
+    g->fillRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_PANEL_HI);
+  }
+  g->drawRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_BORDER);
+  g->setTextSize(2);
+  g->setTextColor(COL_TEXT);
+  g->setCursor(UI_WIFI_SETUP_CANCEL_X0 + 24, UI_WIFI_SETUP_CANCEL_Y0 + 9);
+  g->print("CANCEL");
 }
 
 // ── FULL-SCREEN CLOCK ──────────────────────────────────────

@@ -13,6 +13,9 @@ enum SettingRow : uint8_t {
   ROW_NIGHT_FORCE,
   ROW_RANGEBAR,
   ROW_SHOW_PRICE,
+  ROW_SHOW_DATE,
+  ROW_SHOW_CLOCK,
+  ROW_FORGET_AP,   // action row (no value/options) — see settings.cpp switches
   ROW_COUNT
 };
 
@@ -29,6 +32,8 @@ struct Settings {
   uint8_t nightForce;   // 0 = schedule only, 1 = force night mode on, default 0
   uint8_t rangeBar;     // 0 = hide the 24h range position bar, 1 = show, default 1
   uint8_t showPrice;    // 0 = hide the big price + 24h change, 1 = show, default 1
+  uint8_t showDate;     // 0 = hide the status-bar date, 1 = show, default 1
+  uint8_t showClock;    // 0 = hide the status-bar clock, 1 = show, default 1
 };
 extern Settings gSettings;
 

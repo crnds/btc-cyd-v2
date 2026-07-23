@@ -256,6 +256,63 @@ dialog patterns cover any future setting without new code.
 
 ---
 
+## Wi-Fi setup ("Find Access Mode")
+
+### 1. Problem
+
+Wi-Fi credentials were compile-time-only (`config.h`), so switching networks
+meant editing that file and reflashing over USB — fine for the original
+owner at first setup, not something a phone can do later.
+
+### 2. Design decisions
+
+- **A destructive-action row, not a form.** The device has no keyboard —
+  credential entry has to happen on the phone's own keyboard, not this
+  resistive panel. So the on-device side is just one Settings row,
+  "Forget Wi-Fi network" (NETWORK section, bottom of the list, label in
+  `BAD` instead of the usual `TEXT2` — the same color-plus-text pairing used
+  everywhere else, never color alone), reusing the existing confirmation-page
+  pattern (candle size already established: destructive settings row → full
+  screen "are you sure" → CONFIRM/CANCEL) rather than inventing a new one.
+- **Open SoftAP, no scan dropdown.** The phone joins an open network
+  (`BTC-Ticker-Setup`) and types the target SSID/password into a plain HTML
+  form — no live `WiFi.scanNetworks()` list. Typing a network name on a
+  phone keyboard is normal for this device class (same pattern as
+  Tasmota/Shelly-style setup portals); skipping the scan keeps the new
+  surface area small. The open-AP tradeoff is documented alongside the
+  existing `tls.setInsecure()` one in `AGENTS.md`.
+- **Fallback-on-abort, not test-before-commit.** Rather than trying to
+  validate new credentials before switching to them (which needs concurrent
+  AP+STA and a rollback timer), "Forget Wi-Fi network" simply clears the
+  stored credentials immediately. If setup is ever abandoned — Cancel, or a
+  power cycle — the *next* boot finds no stored credentials and falls back
+  to the compiled `config.h` network automatically. A typo'd password after
+  a completed submission is still recoverable: the dashboard and Settings
+  stay fully touch-usable even fully offline, so the owner just runs Forget
+  Wi-Fi network again.
+
+### 3. New layout
+
+Setup page (full screen, entered from Settings via the confirm page):
+`SETUP MODE` title, `CONNECT YOUR PHONE TO` micro-caps + the AP SSID,
+`THEN OPEN` micro-caps + `http://192.168.4.1`, a hairline, a one-line note,
+and a single outlined CANCEL button (same pressed-fill pattern as every
+other icon/text button in the app) — reboots immediately, which is always
+safe per the fallback model above.
+
+### 4. Accessibility improvements
+
+No data entry happens on the resistive panel at all — the phone's own
+keyboard and screen reader support carry that load. The setup page states
+plainly what's about to happen and how to back out, rather than leaving the
+device in a silent, unlabeled AP-mode limbo.
+
+### 5. Reusable components
+
+None new — this page composes the existing confirmation-page pattern and
+the existing outlined/pressed-fill button component from the clock's close
+control and the confirm page's own buttons.
+
 ## Full-screen clock
 
 ### 1. Issues with the old design
@@ -336,7 +393,7 @@ page.
   `Dashboard ⇄ Full-screen clock` — one gesture each. Settings levels
   keep a visible `<` return in the title bar (left 90 px back zone);
   the clock page uses a visible amber "X" top-left instead.
-- Page state in the .ino: `Page::{DASHBOARD,SETTINGS,CLOCK}` plus
+- Page state in the .ino: `Page::{DASHBOARD,SETTINGS,CLOCK,WIFI_SETUP}` plus
   `clockMode` (0/1/2) and the existing `confirmIdx` (confirm remains a
   property of the picker, not a top-level page).
 - The simulator mirrors the same state machine, so every flow can be

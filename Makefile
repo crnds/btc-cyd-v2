@@ -1,6 +1,6 @@
 SKETCH := firmware/btc_ticker
 FQBN   := esp32:esp32:esp32:PartitionScheme=huge_app,UploadSpeed=115200
-PORT   := /dev/cu.usbserial-10
+PORT   := /dev/cu.usbserial-110
 BAUD   := 115200
 
 .PHONY: build flash monitor clean

@@ -1043,9 +1043,12 @@
     // Settings constants & helpers (mirrors settings.cpp / ui.cpp)
     const SETTINGS_ROW_LABELS = [
       "Brightness", "Flip screen", "Price fetch", "Candle size", "Time range", "Chart style",
-      "Night schedule", "Force night mode", "Range bar", "Price"
+      "Night schedule", "Force night mode", "Range bar", "Price", "Date", "Clock", "Forget Wi-Fi network"
     ];
 
+    // ROW_FORGET_AP has no picker page (skips straight to the confirm
+    // dialog — see settingsItemAt tap handling below), so its description
+    // slot is unused filler, matching ui.cpp.
     const SETTINGS_ROW_DESC = [
       "Backlight level. Auto follows ambient light.",
       "Rotate the screen 180 degrees.",
@@ -1056,7 +1059,10 @@
       "Dim red-only screen from 23:00 to 08:00.",
       "Keep night mode on, ignoring the schedule.",
       "Show today's low-to-high position bar.",
-      "Show the live price and 24h change."
+      "Show the live price and 24h change.",
+      "Show the date in the top status bar.",
+      "Show the time in the top status bar.",
+      ""
     ];
 
     const BRI_LABEL = ["5%", "25%", "50%", "75%", "100%", "Auto"];
@@ -1072,10 +1078,13 @@
     // Row enum values (settings.h)
     const ROW_BRIGHTNESS = 0, ROW_FLIP = 1, ROW_PRICE_IV = 2, ROW_CANDLE_IV = 3,
           ROW_RANGE = 4, ROW_STYLE = 5, ROW_NIGHT = 6, ROW_NIGHT_FORCE = 7,
-          ROW_RANGEBAR = 8, ROW_SHOW_PRICE = 9, ROW_COUNT = 10;
+          ROW_RANGEBAR = 8, ROW_SHOW_PRICE = 9, ROW_SHOW_DATE = 10,
+          ROW_SHOW_CLOCK = 11, ROW_FORGET_AP = 12, ROW_COUNT = 13;
 
     // Grouped settings list model (mirrors SET_ITEMS in ui.cpp). Binary rows
-    // (2 options) toggle in place; wider rows open the picker.
+    // (2 options) toggle in place; wider rows open the picker. ROW_FORGET_AP
+    // is an action row — it skips the picker entirely (see settingsItemAt
+    // tap handling below).
     const SET_ITEMS = [
       { header: "MARKET DATA" },
       { row: ROW_PRICE_IV },
@@ -1088,8 +1097,12 @@
       { header: "DISPLAY" },
       { row: ROW_BRIGHTNESS },
       { row: ROW_FLIP },
+      { row: ROW_SHOW_CLOCK },
+      { row: ROW_SHOW_DATE },
       { row: ROW_NIGHT },
       { row: ROW_NIGHT_FORCE },
+      { header: "NETWORK" },
+      { row: ROW_FORGET_AP },
     ];
     const SET_HDR_H = 26;
     const SET_ROW_H = 40;
@@ -1122,6 +1135,12 @@
     const UI_CONFIRM_CANCEL_X1 = 150;
     const UI_CONFIRM_OK_X0 = 170;
     const UI_CONFIRM_OK_X1 = 290;
+    // Wi-Fi setup page Cancel button (mirrors ui.h UI_WIFI_SETUP_CANCEL_*)
+    const UI_WIFI_SETUP_CANCEL_X0 = 100;
+    const UI_WIFI_SETUP_CANCEL_X1 = 220;
+    const UI_WIFI_SETUP_CANCEL_Y0 = 190;
+    const UI_WIFI_SETUP_CANCEL_Y1 = 224;
+    const WIFI_PORTAL_SSID = "BTC-Ticker-Setup";
 
     function settingsOptionCount(row) {
       switch (row) {
@@ -1135,6 +1154,8 @@
         case ROW_NIGHT_FORCE: return 2;
         case ROW_RANGEBAR: return 2;
         case ROW_SHOW_PRICE: return 2;
+        case ROW_SHOW_DATE: return 2;
+        case ROW_SHOW_CLOCK: return 2;
         default: return 0;
       }
     }
@@ -1151,6 +1172,8 @@
         case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
         case ROW_RANGEBAR: return ONOFF_LABEL[idx];
         case ROW_SHOW_PRICE: return ONOFF_LABEL[idx];
+        case ROW_SHOW_DATE: return ONOFF_LABEL[idx];
+        case ROW_SHOW_CLOCK: return ONOFF_LABEL[idx];
         default: return "";
       }
     }
@@ -1167,6 +1190,8 @@
         case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
         case ROW_RANGEBAR: return ONOFF_LABEL[gSettings.rangeBar];
         case ROW_SHOW_PRICE: return ONOFF_LABEL[gSettings.showPrice];
+        case ROW_SHOW_DATE: return ONOFF_LABEL[gSettings.showDate];
+        case ROW_SHOW_CLOCK: return ONOFF_LABEL[gSettings.showClock];
         default: return "";
       }
     }
@@ -1183,6 +1208,8 @@
         case ROW_NIGHT_FORCE: return gSettings.nightForce;
         case ROW_RANGEBAR: return gSettings.rangeBar;
         case ROW_SHOW_PRICE: return gSettings.showPrice;
+        case ROW_SHOW_DATE: return gSettings.showDate;
+        case ROW_SHOW_CLOCK: return gSettings.showClock;
         default: return 0;
       }
     }
@@ -1233,6 +1260,7 @@
     const CHART_W        = 288;
     const AXIS_Y         = 190;
     const CONTENT_TOP    = 30;
+    const CONTENT_TOP_NO_STATUS = EDGE;  // status bar fully empty (no clock, no date)
     const CHART_Y0_BOTH  = 92;   // price + range bar
     const CHART_Y0_PRICE = 72;   // price only
     const CHART_Y0_RANGE = 50;   // range bar only
@@ -1874,7 +1902,7 @@
         this.lastLiveFetchTime = 0;
 
         // Settings State
-        this.currentPage = "dashboard"; // "dashboard", "settings", "settings_picker", "clock"
+        this.currentPage = "dashboard"; // "dashboard", "settings", "settings_picker", "clock", "wifi_setup"
         this.settingsScroll = 0;
         this.pickerRow = -1;
         this.confirmIdx = -1;   // >=0 = confirmation page, pending option idx
@@ -1896,7 +1924,9 @@
           nightEn: 1,
           nightForce: 0,
           rangeBar: 1,
-          showPrice: 1
+          showPrice: 1,
+          showDate: 1,
+          showClock: 1
         };
 
         // Database / RAM Ring Buffer
@@ -2051,6 +2081,8 @@
         // (the firmware's NVS load does the same via per-key defaults)
         if (this.gSettings.rangeBar === undefined) this.gSettings.rangeBar = 1;
         if (this.gSettings.showPrice === undefined) this.gSettings.showPrice = 1;
+        if (this.gSettings.showDate === undefined) this.gSettings.showDate = 1;
+        if (this.gSettings.showClock === undefined) this.gSettings.showClock = 1;
         CANDLE_SECONDS = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
         this.applySettingChange(0xFF); // Apply all settings on load
       }
@@ -2066,7 +2098,9 @@
           nightEn: 1,
           nightForce: 0,
           rangeBar: 1,
-          showPrice: 1
+          showPrice: 1,
+          showDate: 1,
+          showClock: 1
         };
       }
 
@@ -2128,6 +2162,8 @@
           case ROW_NIGHT_FORCE: this.gSettings.nightForce = idx; break;
           case ROW_RANGEBAR: this.gSettings.rangeBar = idx; break;
           case ROW_SHOW_PRICE: this.gSettings.showPrice = idx; break;
+          case ROW_SHOW_DATE: this.gSettings.showDate = idx; break;
+          case ROW_SHOW_CLOCK: this.gSettings.showClock = idx; break;
         }
 
         // Adjust range/candle interval if count > 288 (mirrors settings.cpp)
@@ -2216,6 +2252,19 @@
       }
 
       handleTap(tx, ty) {
+        if (this.currentPage === "wifi_setup") {
+          // Cancel is the only control here — mirrors the firmware's
+          // esp_restart() with a return to the dashboard, standing in for
+          // "reboot falls back to the working network" (there's no real
+          // second device for the simulator to provision).
+          if (tx >= UI_WIFI_SETUP_CANCEL_X0 && tx < UI_WIFI_SETUP_CANCEL_X1 &&
+              ty >= UI_WIFI_SETUP_CANCEL_Y0 && ty < UI_WIFI_SETUP_CANCEL_Y1) {
+            this.currentPage = "dashboard";
+            this.render();
+          }
+          return;
+        }
+
         if (this.currentPage === "clock") {
           // Close "X" top-left — same hit zone as firmware ui.h
           if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
@@ -2238,7 +2287,8 @@
             this.pickerRow = -1;
             this.confirmIdx = -1;
             this.render();
-          } else if (tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
+          } else if (this.gSettings.showClock &&
+                     tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
                      ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
             this.currentPage = "clock";
             this.render();
@@ -2250,8 +2300,14 @@
         if (this.confirmIdx >= 0 && this.pickerRow >= 0) {
           if (ty >= UI_CONFIRM_Y0 && ty < UI_CONFIRM_Y1) {
             if (tx >= UI_CONFIRM_OK_X0 && tx < UI_CONFIRM_OK_X1) {
-              let mask = this.settingsSet(this.pickerRow, this.confirmIdx);
-              this.applySettingChange(mask);
+              if (this.pickerRow === ROW_FORGET_AP) {
+                // Not a settingsSet() value change — mock entering the
+                // phone-facing setup portal (see wifi_setup handling above).
+                this.currentPage = "wifi_setup";
+              } else {
+                let mask = this.settingsSet(this.pickerRow, this.confirmIdx);
+                this.applySettingChange(mask);
+              }
               this.confirmIdx = -1;
               this.pickerRow = -1;
               this.render();
@@ -2303,7 +2359,12 @@
           }
           let row = settingsItemAt(this.settingsScroll, ty);
           if (row >= 0) {
-            if (settingsOptionCount(row) === 2) {
+            if (row === ROW_FORGET_AP) {
+              // Action row, not a value — skip the picker and go straight
+              // to the confirmation page, same as the firmware.
+              this.confirmIdx = 0;
+              this.pickerRow = row;
+            } else if (settingsOptionCount(row) === 2) {
               // Binary setting: the row IS the switch — flip in place
               let mask = this.settingsSet(row, 1 - settingsOptionIndex(row, this.gSettings));
               this.applySettingChange(mask);
@@ -2829,9 +2890,11 @@
             g.fillRect(0, y, CONTENT_RIGHT, h, COL_PANEL_HI);
           }
 
-          // Label secondary, value primary (the value is the information)
+          // Label secondary, value primary (the value is the information).
+          // Exception: Forget Wi-Fi network is a destructive action, not a
+          // value — COL_BAD signals that (paired with the label text).
           g.setTextSize(1);
-          g.setTextColor(COL_TEXT2);
+          g.setTextColor(row === ROW_FORGET_AP ? COL_BAD : COL_TEXT2);
           g.setCursor(12, y + Math.floor((SET_ROW_H - 8) / 2));
           g.print(SETTINGS_ROW_LABELS[row]);
 
@@ -2922,26 +2985,32 @@
         g.setCursor(154, 48);
         g.print("!");
 
-        const title = "CLEAR CHART HISTORY?";
+        const forgetAp = row === ROW_FORGET_AP;
+        const title = forgetAp ? "FORGET WI-FI NETWORK?" : "CLEAR CHART HISTORY?";
         g.setTextColor(COL_TEXT);
         g.setCursor(Math.floor((SCREEN_W - g.textWidth(title)) / 2), 84);
         g.print(title);
 
         g.setTextSize(1);
         g.setTextColor(COL_TEXT2);
-        const l1 = "Changing the candle size erases the";
-        const l2 = "stored chart history and re-downloads it.";
+        const l1 = forgetAp ? "The board will disconnect and start a" :
+                               "Changing the candle size erases the";
+        const l2 = forgetAp ? "setup hotspot for your phone to rejoin it." :
+                               "stored chart history and re-downloads it.";
         g.setCursor(Math.floor((SCREEN_W - g.textWidth(l1)) / 2), 106);
         g.print(l1);
         g.setCursor(Math.floor((SCREEN_W - g.textWidth(l2)) / 2), 116);
         g.print(l2);
 
-        // The pending change, e.g. "5m -> 15m"
-        const preview = `${settingsOptionLabel(row, settingsOptionIndex(row, this.gSettings))} -> ${settingsOptionLabel(row, idx)}`;
-        g.setTextSize(2);
-        g.setTextColor(COL_AMBER);
-        g.setCursor(Math.floor((SCREEN_W - g.textWidth(preview)) / 2), 132);
-        g.print(preview);
+        // The pending change, e.g. "5m -> 15m" — not applicable to Forget
+        // Wi-Fi network, which isn't a value change, so it's skipped there.
+        if (!forgetAp) {
+          const preview = `${settingsOptionLabel(row, settingsOptionIndex(row, this.gSettings))} -> ${settingsOptionLabel(row, idx)}`;
+          g.setTextSize(2);
+          g.setTextColor(COL_AMBER);
+          g.setCursor(Math.floor((SCREEN_W - g.textWidth(preview)) / 2), 132);
+          g.print(preview);
+        }
 
         // Buttons (hit zones shared with the tap handler via UI_CONFIRM_*)
         if (this.pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0, UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1)) {
@@ -3133,6 +3202,61 @@
         this.drawClockClose(g);
       }
 
+      // ── WI-FI SETUP ("FIND ACCESS MODE") — mirrors uiRenderWifiSetup ──
+      // Purely informational mockup: there's no real second device for the
+      // simulator to provision, so Cancel (the only control) just returns to
+      // the dashboard, standing in for "reboot falls back to the working
+      // network" (see handleTap's "wifi_setup" branch).
+      renderWifiSetup() {
+        const g = this.gfx;
+        g.fillScreen(COL_BG);
+
+        const title = "SETUP MODE";
+        g.setTextSize(2);
+        g.setTextColor(COL_AMBER);
+        g.setCursor(Math.floor((SCREEN_W - g.textWidth(title)) / 2), 20);
+        g.print(title);
+
+        const l1 = "CONNECT YOUR PHONE TO";
+        drawCaps(g, Math.floor((SCREEN_W - capsWidth(l1)) / 2), 64, l1, COL_TEXT3);
+
+        g.setTextSize(2);
+        g.setTextColor(COL_TEXT);
+        let w = g.textWidth(WIFI_PORTAL_SSID);
+        g.setCursor(Math.floor((SCREEN_W - w) / 2), 78);
+        g.print(WIFI_PORTAL_SSID);
+
+        const l2 = "THEN OPEN";
+        drawCaps(g, Math.floor((SCREEN_W - capsWidth(l2)) / 2), 108, l2, COL_TEXT3);
+
+        const url = "http://192.168.4.1";
+        g.setTextSize(2);
+        g.setTextColor(COL_TEXT);
+        w = g.textWidth(url);
+        g.setCursor(Math.floor((SCREEN_W - w) / 2), 122);
+        g.print(url);
+
+        g.drawFastHLine(EDGE, 152, CONTENT_RIGHT - EDGE, COL_GRID);
+        const note = "Cancel keeps the current network.";
+        g.setTextSize(1);
+        g.setTextColor(COL_TEXT3);
+        g.setCursor(Math.floor((SCREEN_W - g.textWidth(note)) / 2), 162);
+        g.print(note);
+
+        const pressed = this.pressedIn(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0,
+                                       UI_WIFI_SETUP_CANCEL_X1, UI_WIFI_SETUP_CANCEL_Y1);
+        const bw = UI_WIFI_SETUP_CANCEL_X1 - UI_WIFI_SETUP_CANCEL_X0;
+        const bh = UI_WIFI_SETUP_CANCEL_Y1 - UI_WIFI_SETUP_CANCEL_Y0;
+        if (pressed) {
+          g.fillRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_PANEL_HI);
+        }
+        g.drawRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_BORDER);
+        g.setTextSize(2);
+        g.setTextColor(COL_TEXT);
+        g.setCursor(UI_WIFI_SETUP_CANCEL_X0 + 24, UI_WIFI_SETUP_CANCEL_Y0 + 9);
+        g.print("CANCEL");
+      }
+
       // ── LOVYANGFX FRAME RENDERER ──
       // Touch feedback border (mirrors uiDrawTouchFlash in ui.cpp): 3px on
       // all 4 sides, right side stopping at CONTENT_RIGHT (screen edge).
@@ -3159,77 +3283,60 @@
           this.renderSettingsPicker();
         } else if (this.currentPage === "clock") {
           this.renderClock();
+        } else if (this.currentPage === "wifi_setup") {
+          this.renderWifiSetup();
         } else {
           // ── DASHBOARD (mirrors uiRender in ui.cpp) ──
           g.fillScreen(COL_BG);
 
-          // 1. Status bar: feed-status pulse + wifi top-left, clock center, date right
-          {
-            const now = this.getSimMillis();
-            let feedCol;
-            let pulse = false;
-            if (!this.wifiConnected) {
-              feedCol = COL_BAD;
-            } else if (this.priceOkMs === 0) {
-              feedCol = COL_TEXT2;
-              pulse = true;
-            } else {
-              const age = now - this.priceOkMs;
-              const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
-              const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
-              if (age <= freshMs) {
-                feedCol = COL_GOOD;
-                pulse = true;
-              } else {
-                feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
-              }
-            }
-            // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap.
-            const pulseX = EDGE + 3;   // 7
-            const statusY = 12;
-            const wifiX = pulseX + 3 + 4 + 9;  // 23
-            const dotOn = !pulse || (Math.floor(now / 1000) % 2 === 0);
-            if (dotOn) g.fillCircle(pulseX, statusY, 3, feedCol);
-            g.drawWifi(wifiX, statusY, this.wifiConnected ? COL_GOOD : COL_BAD);
-          }
-
+          // 1. Status bar: clock center, date right — either can be hidden
+          // independently (feed pulse + wifi live in the footer — section 5).
+          // When both are hidden the strip goes blank and the chart above
+          // reclaims it (see CHART_Y0 in section 4).
           const dt = getICTDateTime(this.simulatedTimeEpoch);
           const haveTime = this.simulatedTimeEpoch > NTP_VALID_EPOCH;
-          if (haveTime) {
-            const timeStr = `${dt.hour}:${dt.minute}`;
-            const secStr = `:${dt.second}`;
-            const dateStr = `${dt.wday} ${dt.mday} ${dt.mon}`;
+          const dateStr = `${dt.wday} ${dt.mday} ${dt.mon}`;
 
-            g.setTextSize(2);
-            const w1 = g.textWidth(timeStr);
-            g.setTextSize(1);
-            const w2 = g.textWidth(secStr);
-            const startX = Math.floor((SCREEN_W - w1 - w2) / 2);
+          if (this.gSettings.showClock) {
+            if (haveTime) {
+              const timeStr = `${dt.hour}:${dt.minute}`;
+              const secStr = `:${dt.second}`;
 
-            g.setTextSize(2);
-            g.setTextColor(COL_TEXT);
-            g.setCursor(startX, 4);
-            g.print(timeStr);
+              g.setTextSize(2);
+              const w1 = g.textWidth(timeStr);
+              g.setTextSize(1);
+              const w2 = g.textWidth(secStr);
+              const startX = Math.floor((SCREEN_W - w1 - w2) / 2);
 
-            g.setTextSize(1);
-            g.setTextColor(COL_TEXT3);
-            g.setCursor(startX + w1, 11);
-            g.print(secStr);
+              g.setTextSize(2);
+              g.setTextColor(COL_TEXT);
+              g.setCursor(startX, 4);
+              g.print(timeStr);
 
+              g.setTextSize(1);
+              g.setTextColor(COL_TEXT3);
+              g.setCursor(startX + w1, 11);
+              g.print(secStr);
+            } else {
+              g.setTextSize(2);
+              g.setTextColor(COL_TEXT3);
+              const w = g.textWidth("--:--");
+              g.setCursor(Math.floor((SCREEN_W - w) / 2), 4);
+              g.print("--:--");
+            }
+          }
+
+          if (haveTime && this.gSettings.showDate) {
             g.setTextSize(1);
             g.setTextColor(COL_TEXT2);
             const dateW = g.textWidth(dateStr);
             g.setCursor(CONTENT_RIGHT - dateW, 8);
             g.print(dateStr);
-          } else {
-            g.setTextSize(2);
-            g.setTextColor(COL_TEXT3);
-            const w = g.textWidth("--:--");
-            g.setCursor(Math.floor((SCREEN_W - w) / 2), 4);
-            g.print("--:--");
           }
 
-          g.drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
+          if (this.gSettings.showClock || this.gSettings.showDate) {
+            g.drawFastHLine(EDGE, 24, CONTENT_RIGHT - EDGE, COL_GRID);
+          }
 
           // 2. Price hero: left-aligned "$" + digits, 24h change as a chip
           // Hidden via the "Price" settings row; chart reflows into the gap.
@@ -3305,12 +3412,14 @@
           }
 
           // 4. Chart: gridlines, candles/line, axis labels, last-price marker
-          // Stretch upward into price / range-bar strips when those rows are off.
+          // Stretch upward into price / range-bar strips when those rows are off,
+          // and into the status bar itself once clock + date are both hidden too.
           let CHART_Y0;
           if (this.gSettings.showPrice && this.gSettings.rangeBar) CHART_Y0 = CHART_Y0_BOTH;
           else if (this.gSettings.showPrice) CHART_Y0 = CHART_Y0_PRICE;
           else if (this.gSettings.rangeBar) CHART_Y0 = CHART_Y0_RANGE;
-          else CHART_Y0 = CONTENT_TOP;
+          else if (this.gSettings.showClock || this.gSettings.showDate) CHART_Y0 = CONTENT_TOP;
+          else CHART_Y0 = CONTENT_TOP_NO_STATUS;
           const CHART_H = AXIS_Y - CHART_Y0;
           const candleSeconds = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
           const count = Math.min(288, Math.floor(RANGE_SEC[this.gSettings.rangeIdx] / candleSeconds));
@@ -3516,14 +3625,44 @@
             }
           }
 
-          // 5. Footer: muted device stats + gear (feed pulse is in the status bar)
+          // 5. Footer: feed-status pulse + wifi, muted device stats, gear
           g.drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
 
-          const pad2 = (n) => String(n).padStart(2, '0');
-          g.setTextSize(1);
-          g.setTextColor(COL_TEXT3);
-          g.setCursor(EDGE, 222);
-          g.print(`CPU ${pad2(this.cpuPct)}%  RAM ${pad2(this.ramPct)}%  ROM ${pad2(this.romPct)}%`);
+          {
+            const now = this.getSimMillis();
+            let feedCol;
+            let pulse = false;
+            if (!this.wifiConnected) {
+              feedCol = COL_BAD;
+            } else if (this.priceOkMs === 0) {
+              feedCol = COL_TEXT2;
+              pulse = true;
+            } else {
+              const age = now - this.priceOkMs;
+              const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
+              const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
+              if (age <= freshMs) {
+                feedCol = COL_GOOD;
+                pulse = true;
+              } else {
+                feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
+              }
+            }
+            // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap,
+            // vertically centered on the footer row (same center as the gear).
+            const pulseX = EDGE + 3;   // 7
+            const statusY = 226;
+            const wifiX = pulseX + 3 + 4 + 9;  // 23
+            const dotOn = !pulse || (Math.floor(now / 500) % 2 === 0);  // 500ms on / 500ms off
+            if (dotOn) g.fillCircle(pulseX, statusY, 3, feedCol);
+            g.drawWifi(wifiX, statusY, this.wifiConnected ? COL_GOOD : COL_BAD);
+
+            const pad2 = (n) => String(n).padStart(2, '0');
+            g.setTextSize(1);
+            g.setTextColor(COL_TEXT3);
+            g.setCursor(wifiX + 9 + 6, 222);
+            g.print(`CPU ${pad2(this.cpuPct)}%  RAM ${pad2(this.ramPct)}%  ROM ${pad2(this.romPct)}%`);
+          }
 
           // Settings button: outlined hit target, flush with CONTENT_RIGHT
           if (this.pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H)) {

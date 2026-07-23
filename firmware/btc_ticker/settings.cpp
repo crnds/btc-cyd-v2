@@ -1,7 +1,7 @@
 #include "settings.h"
 #include "candles.h"
 
-Settings gSettings = {4, 0, 0, 0, 1, 0, 1, 0, 1, 1};
+Settings gSettings = {4, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1};
 
 const uint8_t BRI_VAL[BRI_COUNT] = {13, 64, 128, 191, 255, 0};
 const char* const BRI_LABEL[BRI_COUNT] = {"5%", "25%", "50%", "75%", "100%", "Auto"};
@@ -31,6 +31,8 @@ const char* settingsValueLabel(int row) {
     case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
     case ROW_RANGEBAR:   return ONOFF_LABEL[gSettings.rangeBar];
     case ROW_SHOW_PRICE: return ONOFF_LABEL[gSettings.showPrice];
+    case ROW_SHOW_DATE:  return ONOFF_LABEL[gSettings.showDate];
+    case ROW_SHOW_CLOCK: return ONOFF_LABEL[gSettings.showClock];
     default:             return "";
   }
 }
@@ -47,6 +49,8 @@ int settingsOptionCount(int row) {
     case ROW_NIGHT_FORCE: return 2;
     case ROW_RANGEBAR:   return 2;
     case ROW_SHOW_PRICE: return 2;
+    case ROW_SHOW_DATE:  return 2;
+    case ROW_SHOW_CLOCK: return 2;
     default:             return 0;
   }
 }
@@ -63,6 +67,8 @@ const char* settingsOptionLabel(int row, int idx) {
     case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
     case ROW_RANGEBAR:   return ONOFF_LABEL[idx];
     case ROW_SHOW_PRICE: return ONOFF_LABEL[idx];
+    case ROW_SHOW_DATE:  return ONOFF_LABEL[idx];
+    case ROW_SHOW_CLOCK: return ONOFF_LABEL[idx];
     default:             return "";
   }
 }
@@ -79,6 +85,8 @@ uint8_t settingsOptionIndex(int row) {
     case ROW_NIGHT_FORCE: return gSettings.nightForce;
     case ROW_RANGEBAR:   return gSettings.rangeBar;
     case ROW_SHOW_PRICE: return gSettings.showPrice;
+    case ROW_SHOW_DATE:  return gSettings.showDate;
+    case ROW_SHOW_CLOCK: return gSettings.showClock;
     default:             return 0;
   }
 }
@@ -94,6 +102,8 @@ void settingsLoad(Preferences& p) {
   gSettings.nightForce = p.getUChar("s.nf", 0);
   gSettings.rangeBar = p.getUChar("s.rbar", 1);
   gSettings.showPrice = p.getUChar("s.spri", 1);
+  gSettings.showDate = p.getUChar("s.sdat", 1);
+  gSettings.showClock = p.getUChar("s.sclk", 1);
 
   if (gSettings.briIdx >= BRI_COUNT) gSettings.briIdx = 4;
   if (gSettings.flip > 1) gSettings.flip = 0;
@@ -105,6 +115,8 @@ void settingsLoad(Preferences& p) {
   if (gSettings.nightForce > 1) gSettings.nightForce = 0;
   if (gSettings.rangeBar > 1) gSettings.rangeBar = 1;
   if (gSettings.showPrice > 1) gSettings.showPrice = 1;
+  if (gSettings.showDate > 1) gSettings.showDate = 1;
+  if (gSettings.showClock > 1) gSettings.showClock = 1;
 
   // A combo persisted before this auto-adjust logic existed (or corrupted
   // NVS) could be invalid on load; fix it up the same way settingsCycle does.
@@ -125,6 +137,8 @@ void settingsSaveRow(Preferences& p, int row) {
     case ROW_NIGHT_FORCE: p.putUChar("s.nf", gSettings.nightForce); break;
     case ROW_RANGEBAR:   p.putUChar("s.rbar", gSettings.rangeBar); break;
     case ROW_SHOW_PRICE: p.putUChar("s.spri", gSettings.showPrice); break;
+    case ROW_SHOW_DATE:  p.putUChar("s.sdat", gSettings.showDate); break;
+    case ROW_SHOW_CLOCK: p.putUChar("s.sclk", gSettings.showClock); break;
   }
 }
 
@@ -145,6 +159,8 @@ uint16_t settingsSet(int row, uint8_t idx) {
     case ROW_NIGHT_FORCE: gSettings.nightForce = idx; break;
     case ROW_RANGEBAR:   gSettings.rangeBar = idx; break;
     case ROW_SHOW_PRICE: gSettings.showPrice = idx; break;
+    case ROW_SHOW_DATE:  gSettings.showDate = idx; break;
+    case ROW_SHOW_CLOCK: gSettings.showClock = idx; break;
   }
 
   uint32_t count = RANGE_SEC[gSettings.rangeIdx] / CANDLE_IV_SEC[gSettings.candleIvIdx];

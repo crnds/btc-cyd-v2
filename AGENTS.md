@@ -24,7 +24,11 @@ What it does:
   "X" top-left returns); a touch-driven Settings page (gear icon,
   bottom-right) configures brightness, 180° flip, price/candle intervals,
   time range, chart style (Red/Green, Black/White, Line), and night mode
-  (red-only UI + 5% brightness 23:00-08:00, plus manual force-on).
+  (red-only UI + 5% brightness 23:00-08:00, plus manual force-on); a
+  "Forget Wi-Fi network" row under a NETWORK section clears any stored
+  Wi-Fi credentials and puts the device into a SoftAP + captive-portal
+  setup mode ("Find Access Mode") so a phone can submit a new network
+  without a reflash.
 - 24/7 robustness: job scheduler with exponential backoff, WiFi supervisor
   (re-`begin()` after 60s down, `esp_restart()` after 10min), daily 4AM
   restart, heap logging every 60s.
@@ -90,8 +94,13 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 ├── net_price.h/.cpp       # persistent keep-alive TLS session for price polls
 ├── net_klines.h/.cpp      # streaming klines parser (no payload buffering)
 ├── settings.h/.cpp        # settings model, NVS persistence, option pickers
+├── wifi_creds.h/.cpp      # NVS-backed Wi-Fi credentials (separate "wifi"
+│                          #   namespace), fallback to config.h when empty
+├── wifi_portal.h/.cpp     # SoftAP + captive portal for phone-driven Wi-Fi
+│                          #   re-provisioning ("Forget Wi-Fi network")
 └── ui.h/.cpp              # all drawing: dashboard, grouped settings list,
-                           #   option pickers, confirm dialog, night mode
+                           #   option pickers, confirm dialog, Wi-Fi setup
+                           #   page, night mode
 ```
 
 ## Module notes and key designs
@@ -140,6 +149,19 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
   first because it wipes the candle DB. Extending the settings page is the
   intended cheap extension point — add a row enum, option table, labels,
   a `SET_ITEMS` entry, and a save case.
+- **Wi-Fi re-provisioning** (`wifi_creds.*`, `wifi_portal.*`): credentials
+  are normally compiled into `config.h`, but `wifi_creds.*` can override that
+  from a separate NVS namespace (`"wifi"`, distinct from the `"ticker"`
+  settings namespace). Tapping "Forget Wi-Fi network" → CONFIRM clears that
+  NVS store, tears down STA, and brings up an open SoftAP
+  (`WIFI_PORTAL_SSID`) with a `WebServer`/`DNSServer` captive portal at
+  `192.168.4.1` (`Page::WIFI_SETUP`, its own `loop()` short-circuit that
+  skips the normal 24/7 job logic — there's no internet in AP mode). The
+  key safety property: an aborted setup (Cancel, or power-cycle) leaves no
+  NVS credentials, so the *next* boot falls back to `config.h` automatically
+  — Forget Wi-Fi network can never hard-lock the device out of every
+  network. Only a completed form submission (`POST /save`) writes new NVS
+  credentials and reboots onto them.
 - **Single-threaded model**: everything runs on the Arduino `loop()` task —
   no locking anywhere; `ui.cpp` reads the candle ring directly between
   mutations. Keep it that way. `loop()` also computes the footer CPU% as an
@@ -200,6 +222,10 @@ There is **no automated test suite**. Verification is:
 - TLS certificate verification is disabled (`tls.setInsecure()`) in both
   `net_http.cpp` and `net_price.cpp` — a deliberate v1 tradeoff for a
   read-only price ticker; flagged in code comments if that ever changes.
+- The Wi-Fi setup portal (`wifi_portal.cpp`) is an **open SoftAP** (no
+  password) — same tradeoff class as the TLS point above, chosen so a phone
+  can join with one tap. It's only up while the device is deliberately in
+  setup mode, on premises the owner controls.
 - NVS settings and the LittleFS candle DB are validated/clamped on load
   (corrupted flash or NVS must not crash or poison the UI) — preserve those
   validation paths when editing `settingsLoad()` or `storeInit()`.

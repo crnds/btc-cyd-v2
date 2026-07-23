@@ -23,6 +23,8 @@
 #include "net_klines.h"
 #include "settings.h"
 #include "ui.h"
+#include "wifi_creds.h"
+#include "wifi_portal.h"
 
 // ── DISPLAY CONFIG (verbatim from cyd-stripdown/firmware/cyd_dashboard) ──
 class LGFX : public lgfx::LGFX_Device {
@@ -114,7 +116,7 @@ float dayHigh = NAN;  // 24h high/low from the ticker payload, for the range bar
 float dayLow = NAN;
 uint32_t priceOkMs = 0;
 
-enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK };
+enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK, WIFI_SETUP };
 static Page currentPage = Page::DASHBOARD;
 static int settingsScroll = 0;  // px, 0..uiSettingsMaxScroll()
 static int pickerRow = -1;      // -1 = settings list, >=0 = option picker for that row
@@ -152,6 +154,17 @@ applySettingChange(mask);
 }
 
 static void handleTap(int tx, int ty) {
+if (currentPage == Page::WIFI_SETUP) {
+// Cancel is the only control on this page; reboots immediately. Safe
+// no-op — credentials were already cleared and nothing new was saved,
+// so the next boot falls back to the compiled config.h network.
+if (tx >= UI_WIFI_SETUP_CANCEL_X0 && tx < UI_WIFI_SETUP_CANCEL_X1 &&
+    ty >= UI_WIFI_SETUP_CANCEL_Y0 && ty < UI_WIFI_SETUP_CANCEL_Y1) {
+esp_restart();
+}
+return;
+}
+
 if (currentPage == Page::CLOCK) {
 // Close "X" top-left — generous hit zone shared with ui.h drawing.
 if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
@@ -173,7 +186,8 @@ settingsScroll = 0;
 pickerRow = -1;
 confirmIdx = -1;
 renderIfDue(true);
-} else if (tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
+} else if (gSettings.showClock &&
+           tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
            ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
 currentPage = Page::CLOCK;
 // Keep last clockMode so re-entry restores the user's preferred face.
@@ -187,7 +201,18 @@ return;
 if (confirmIdx >= 0 && pickerRow >= 0) {
 if (ty >= UI_CONFIRM_Y0 && ty < UI_CONFIRM_Y1) {
 if (tx >= UI_CONFIRM_OK_X0 && tx < UI_CONFIRM_OK_X1) {
+if (pickerRow == ROW_FORGET_AP) {
+// Not a settingsSet() value change — tear down STA and hand the
+// device to the phone-facing setup portal. fetchPriceRelease()
+// frees the price poll's TLS session first (one session at a time,
+// same discipline as maybeBackfill()).
+fetchPriceRelease();
+wifiCredsClear();
+wifiPortalStart();
+currentPage = Page::WIFI_SETUP;
+} else {
 applyMask(settingsSet(pickerRow, (uint8_t)confirmIdx));
+}
 confirmIdx = -1;
 pickerRow = -1;  // back to the list, which now shows the new value
 renderIfDue(true);
@@ -236,7 +261,13 @@ return;
 }
 int row = uiSettingsItemAt(settingsScroll, ty);
 if (row >= 0) {
-if (settingsOptionCount(row) == 2) {
+if (row == ROW_FORGET_AP) {
+// Action row, not a value — skip the option picker and go straight
+// to the confirmation page (confirmIdx is unused for this row beyond
+// being >= 0; see handleTap's confirm-page branch above).
+confirmIdx = 0;
+pickerRow = row;
+} else if (settingsOptionCount(row) == 2) {
 // Binary setting: the row IS the switch — flip in place, no picker.
 applyMask(settingsSet(row, (uint8_t)(1 - settingsOptionIndex(row))));
 } else {
@@ -429,14 +460,29 @@ if (mask & (1u << ROW_RANGE)) {
 backfillDoneOnce = false;
 backfillNextMs = millis();
 }
-// ROW_STYLE, ROW_NIGHT, ROW_NIGHT_FORCE, ROW_RANGEBAR and ROW_SHOW_PRICE need
-// no side effect — the next render reads gSettings / applies uiSetNightMode
-// directly (and reflows chart height when price / range bar are hidden).
+// ROW_STYLE, ROW_NIGHT, ROW_NIGHT_FORCE, ROW_RANGEBAR, ROW_SHOW_PRICE,
+// ROW_SHOW_DATE and ROW_SHOW_CLOCK need no side effect — the next render
+// reads gSettings / applies uiSetNightMode directly (and reflows chart
+// height when price / range bar / status bar are hidden).
 }
 
 // ── WiFi supervisor ────────────────────────────────────────
 static uint32_t wifiDownSinceMs = 0;
 static uint32_t wifiLastRetryMs = 0;
+
+// Connects using stored NVS credentials if present (set via the "Forget
+// Wi-Fi network" setup portal), else the compiled config.h defaults. Shared
+// between setup() and wifiSupervisor()'s re-begin() so the fallback logic
+// can't drift between the two call sites.
+static void wifiBeginConfigured() {
+char ssid[WIFI_CREDS_SSID_LEN];
+char pass[WIFI_CREDS_PASS_LEN];
+if (wifiCredsLoad(ssid, sizeof(ssid), pass, sizeof(pass))) {
+WiFi.begin(ssid, pass);
+} else {
+WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+}
 
 static void wifiSupervisor() {
 uint32_t now = millis();
@@ -452,7 +498,7 @@ esp_restart();
 } else if (downFor > 60000UL && now - wifiLastRetryMs > 60000UL) {
 wifiLastRetryMs = now;
 Serial.println("wifi down >60s, re-begin()");
-WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+wifiBeginConfigured();
 }
 }
 
@@ -600,6 +646,8 @@ if (currentPage == Page::SETTINGS) {
   else uiRenderSettings(g, settingsScroll);
 } else if (currentPage == Page::CLOCK) {
   uiRenderClock(g, clockMode);
+} else if (currentPage == Page::WIFI_SETUP) {
+  uiRenderWifiSetup(g, WIFI_PORTAL_SSID);
 } else {
 UiState st;
 st.wifiConnected = WiFi.status() == WL_CONNECTED;
@@ -660,11 +708,20 @@ renderIfDue(true);
 
 WiFi.mode(WIFI_STA);
 WiFi.setAutoReconnect(true);
-WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+wifiBeginConfigured();
 }
 
 void loop() {
 uint32_t loopStart = millis();
+if (currentPage == Page::WIFI_SETUP) {
+// No internet in AP mode — none of the normal 24/7 job/backfill/restart
+// logic has anything to do. Just service the setup portal and touch.
+wifiPortalLoop();
+handleTouch();
+renderIfDue();
+delay(10);
+return;
+}
 wifiSupervisor();
 serviceJobs();
 maybeBackfill();
