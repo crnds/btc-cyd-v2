@@ -20,6 +20,13 @@ struct UiState {
 // ring/forming candle from candles.h directly.
 void uiRender(lgfx::LovyanGFX* g, const UiState& st);
 
+// Draws just the footer feed-status pulse dot (color + 250ms blink) into `g`.
+// uiRender()/drawFooter() call this as part of a full frame; btc_ticker.ino's
+// updateFeedPulse() also calls it directly against the live panel on its own
+// fast cadence, bypassing the full-frame sprite render + SPI push so the
+// blink stays smooth without redrawing the whole dashboard 4x as often.
+void uiDrawFeedPulse(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t priceOkMs);
+
 // Installs the UI's colors as `spr`'s palette and remaps every COL_* from
 // RGB565 to its palette index. Call once after createSprite() succeeds on a
 // palette-depth sprite, before the first render. If never called (direct-to-

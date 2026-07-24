@@ -5,7 +5,6 @@
 #include <WiFiClientSecure.h>
 #include <stdlib.h>
 
-static const uint32_t HTTP_TIMEOUT_MS = 8000;
 static const char* KLINES_URL_FMT =
     "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=%s&limit=%d";
 

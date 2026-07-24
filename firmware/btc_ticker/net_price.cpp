@@ -1,10 +1,10 @@
 #include "net_price.h"
+#include "net_http.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 
 static const char* PRICE_URL = "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT";
-static const uint32_t HTTP_TIMEOUT_MS = 8000;
 
 // File-scope (not function-local) so fetchPriceRelease() can tear the
 // session down from outside fetchPrice() — see its declaration in the
@@ -18,10 +18,7 @@ static bool fresh = true;  // true -> (re)configure + full handshake next GET
 // steady-state poll is a single request on the already-open socket.
 bool fetchPrice(float& price, float& changePct, float& high24h, float& low24h) {
   if (fresh) {
-    tls.setInsecure();           // v1: no cert pinning
-    http.setConnectTimeout(HTTP_TIMEOUT_MS);
-    http.setTimeout(HTTP_TIMEOUT_MS);
-    http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    configureHttpClient(http, tls);
     http.setReuse(true);         // default, kept explicit: HTTP/1.1 keep-alive
     fresh = false;
     // NOTE: never call useHTTP10() here — it forces _reuse=false in

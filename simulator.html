@@ -1065,7 +1065,7 @@
       ""
     ];
 
-    const BRI_LABEL = ["5%", "25%", "50%", "75%", "100%", "Auto"];
+    const BRI_LABEL = ["5%", "25%", "50%", "75%", "100%", "Auto", "1%"];
     const PRICE_IV_LABEL = ["1s", "5s", "10s", "1m", "5m"];
     const PRICE_IV_MS = [1000, 5000, 10000, 60000, 300000];
     const CANDLE_IV_LABEL = ["5m", "15m", "1h", "4h"];
@@ -1142,76 +1142,46 @@
     const UI_WIFI_SETUP_CANCEL_Y1 = 224;
     const WIFI_PORTAL_SSID = "BTC-Ticker-Setup";
 
+    // Per-row metadata: which gSettings field a row reads/writes, and its
+    // option labels (mirrors settings.cpp's ROW_META). Collapses what used
+    // to be 4 parallel switch(row) statements here plus a 5th in
+    // ESP32Simulator.settingsSet — adding a row now only means one new entry
+    // here. ROW_FORGET_AP is an action row: field is null, so every accessor
+    // below falls through to its empty/no-op case.
+    const ROW_META = [
+      { field: "briIdx",      labels: BRI_LABEL },
+      { field: "flip",        labels: ONOFF_LABEL },
+      { field: "priceIvIdx",  labels: PRICE_IV_LABEL },
+      { field: "candleIvIdx", labels: CANDLE_IV_LABEL },
+      { field: "rangeIdx",    labels: RANGE_LABEL },
+      { field: "styleIdx",    labels: STYLE_LABEL },
+      { field: "nightEn",     labels: ONOFF_LABEL },
+      { field: "nightForce",  labels: ONOFF_LABEL },
+      { field: "rangeBar",    labels: ONOFF_LABEL },
+      { field: "showPrice",   labels: ONOFF_LABEL },
+      { field: "showDate",    labels: ONOFF_LABEL },
+      { field: "showClock",   labels: ONOFF_LABEL },
+      { field: null,          labels: null },
+    ];
+
     function settingsOptionCount(row) {
-      switch (row) {
-        case ROW_BRIGHTNESS: return 6;
-        case ROW_FLIP: return 2;
-        case ROW_PRICE_IV: return 5;
-        case ROW_CANDLE_IV: return 4;
-        case ROW_RANGE: return 3;
-        case ROW_STYLE: return 3;
-        case ROW_NIGHT: return 2;
-        case ROW_NIGHT_FORCE: return 2;
-        case ROW_RANGEBAR: return 2;
-        case ROW_SHOW_PRICE: return 2;
-        case ROW_SHOW_DATE: return 2;
-        case ROW_SHOW_CLOCK: return 2;
-        default: return 0;
-      }
+      const labels = ROW_META[row].labels;
+      return labels ? labels.length : 0;
     }
 
     function settingsOptionLabel(row, idx) {
-      switch (row) {
-        case ROW_BRIGHTNESS: return BRI_LABEL[idx];
-        case ROW_FLIP: return ONOFF_LABEL[idx];
-        case ROW_PRICE_IV: return PRICE_IV_LABEL[idx];
-        case ROW_CANDLE_IV: return CANDLE_IV_LABEL[idx];
-        case ROW_RANGE: return RANGE_LABEL[idx];
-        case ROW_STYLE: return STYLE_LABEL[idx];
-        case ROW_NIGHT: return ONOFF_LABEL[idx];
-        case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
-        case ROW_RANGEBAR: return ONOFF_LABEL[idx];
-        case ROW_SHOW_PRICE: return ONOFF_LABEL[idx];
-        case ROW_SHOW_DATE: return ONOFF_LABEL[idx];
-        case ROW_SHOW_CLOCK: return ONOFF_LABEL[idx];
-        default: return "";
-      }
+      const labels = ROW_META[row].labels;
+      return labels ? labels[idx] : "";
     }
 
     function settingsValueLabel(row, gSettings) {
-      switch (row) {
-        case ROW_BRIGHTNESS: return BRI_LABEL[gSettings.briIdx];
-        case ROW_FLIP: return ONOFF_LABEL[gSettings.flip];
-        case ROW_PRICE_IV: return PRICE_IV_LABEL[gSettings.priceIvIdx];
-        case ROW_CANDLE_IV: return CANDLE_IV_LABEL[gSettings.candleIvIdx];
-        case ROW_RANGE: return RANGE_LABEL[gSettings.rangeIdx];
-        case ROW_STYLE: return STYLE_LABEL[gSettings.styleIdx];
-        case ROW_NIGHT: return ONOFF_LABEL[gSettings.nightEn];
-        case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
-        case ROW_RANGEBAR: return ONOFF_LABEL[gSettings.rangeBar];
-        case ROW_SHOW_PRICE: return ONOFF_LABEL[gSettings.showPrice];
-        case ROW_SHOW_DATE: return ONOFF_LABEL[gSettings.showDate];
-        case ROW_SHOW_CLOCK: return ONOFF_LABEL[gSettings.showClock];
-        default: return "";
-      }
+      const m = ROW_META[row];
+      return m.field ? m.labels[gSettings[m.field]] : "";
     }
 
     function settingsOptionIndex(row, gSettings) {
-      switch (row) {
-        case ROW_BRIGHTNESS: return gSettings.briIdx;
-        case ROW_FLIP: return gSettings.flip;
-        case ROW_PRICE_IV: return gSettings.priceIvIdx;
-        case ROW_CANDLE_IV: return gSettings.candleIvIdx;
-        case ROW_RANGE: return gSettings.rangeIdx;
-        case ROW_STYLE: return gSettings.styleIdx;
-        case ROW_NIGHT: return gSettings.nightEn;
-        case ROW_NIGHT_FORCE: return gSettings.nightForce;
-        case ROW_RANGEBAR: return gSettings.rangeBar;
-        case ROW_SHOW_PRICE: return gSettings.showPrice;
-        case ROW_SHOW_DATE: return gSettings.showDate;
-        case ROW_SHOW_CLOCK: return gSettings.showClock;
-        default: return 0;
-      }
+      const m = ROW_META[row];
+      return m.field ? gSettings[m.field] : 0;
     }
 
     // Grouped-list geometry (mirrors ui.cpp helpers — shared so drawing and
@@ -1521,6 +1491,16 @@
         g.print(c);
         x += 7;
       }
+    }
+
+    // Horizontally centers `text` on the full screen width at row `y`
+    // (mirrors drawCentered() in ui.cpp) — the confirm and Wi-Fi-setup
+    // full-screen pages are built almost entirely from lines like this.
+    function drawCentered(g, y, text, color, size) {
+      g.setTextSize(size);
+      g.setTextColor(color);
+      g.setCursor(Math.floor((SCREEN_W - g.textWidth(text)) / 2), y);
+      g.print(text);
     }
 
     // ── KEYLESS LIVE DATA PROVIDERS ──────────────────────────
@@ -2038,7 +2018,15 @@
         this.wifiDownSinceMs = 0;
         this.wifiLastRetryMs = 0;
 
-        this.currentPage = "dashboard";
+        // Restore whichever restorable page (dashboard or full-screen clock,
+        // plus clock face) was current before the reset — mirrors the
+        // firmware's saveLastPage()/setup() restore. Settings/Wi-Fi-setup
+        // are never saved as "last page", so a reset mid-settings always
+        // falls back to the dashboard.
+        const lastPage = localStorage.getItem("btc_cyd_lastPage");
+        this.currentPage = (lastPage === "clock") ? "clock" : "dashboard";
+        const savedClockMode = parseInt(localStorage.getItem("btc_cyd_clockMode"), 10);
+        this.clockMode = (savedClockMode >= 0 && savedClockMode < UI_CLOCK_MODE_COUNT) ? savedClockMode : UI_CLOCK_MODE_SPLIT;
         this.settingsScroll = 0;
         this.pickerRow = -1;
         this.confirmIdx = -1;
@@ -2108,15 +2096,18 @@
         localStorage.setItem("btc_cyd_settings", JSON.stringify(this.gSettings));
       }
 
-      // Mirrors firmware applyNightBrightness: night force→5%, Auto→stable
+      // Mirrors firmware applyNightBrightness: night force→1%, Auto→stable
       // mid level (firmware uses LDR + hysteresis; we can't sense ambient here),
       // else fixed BRI_VAL. Only rewrite the canvas filter when the duty changes
       // so the sim doesn't flash the way the old unconditional setBrightness path did.
       applyBrightness() {
-        const briVal = [13, 64, 128, 191, 255, 0];
+        // 1% is appended last (index 6), matching settings.cpp's BRI_VAL —
+        // it isn't one of the 0-4 auto-brightness levels or the index-5
+        // "Auto" special case, so it needs its own filter step below.
+        const briVal = [13, 64, 128, 191, 255, 0, 3];
         let displayIdx = this.gSettings.briIdx;
         if (this.gfx.nightMode) {
-          displayIdx = 0; // Forced to 5% in night mode
+          displayIdx = 6; // Forced to 1% in night mode
         } else if (displayIdx === 5) {
           displayIdx = 2; // Simulated auto brightness sits at 50%
         }
@@ -2130,7 +2121,9 @@
         this._lastBriDuty = duty;
 
         const canvas = document.getElementById("screenCanvas");
-        if (displayIdx === 0) {
+        if (displayIdx === 6) {
+          canvas.style.filter = "brightness(8%)";
+        } else if (displayIdx === 0) {
           canvas.style.filter = "brightness(15%)";
         } else if (displayIdx === 1) {
           canvas.style.filter = "brightness(40%)";
@@ -2151,20 +2144,7 @@
         if (idx === oldIdx) return 0;
 
         let mask = 1 << row;
-        switch (row) {
-          case ROW_BRIGHTNESS: this.gSettings.briIdx = idx; break;
-          case ROW_FLIP: this.gSettings.flip = idx; break;
-          case ROW_PRICE_IV: this.gSettings.priceIvIdx = idx; break;
-          case ROW_CANDLE_IV: this.gSettings.candleIvIdx = idx; break;
-          case ROW_RANGE: this.gSettings.rangeIdx = idx; break;
-          case ROW_STYLE: this.gSettings.styleIdx = idx; break;
-          case ROW_NIGHT: this.gSettings.nightEn = idx; break;
-          case ROW_NIGHT_FORCE: this.gSettings.nightForce = idx; break;
-          case ROW_RANGEBAR: this.gSettings.rangeBar = idx; break;
-          case ROW_SHOW_PRICE: this.gSettings.showPrice = idx; break;
-          case ROW_SHOW_DATE: this.gSettings.showDate = idx; break;
-          case ROW_SHOW_CLOCK: this.gSettings.showClock = idx; break;
-        }
+        this.gSettings[ROW_META[row].field] = idx;
 
         // Adjust range/candle interval if count > 288 (mirrors settings.cpp)
         let count = RANGE_SEC[this.gSettings.rangeIdx] / CANDLE_IV_SEC[this.gSettings.candleIvIdx];
@@ -2215,6 +2195,16 @@
                this.fingerY >= y0 && this.fingerY < y1;
       }
 
+      // Outlined button chrome: border + pressed-state fill (mirrors
+      // drawButtonChrome() in ui.cpp) — the shared shape behind the gear
+      // button, the confirm-page CANCEL button, the clock's close "X", and
+      // the Wi-Fi setup Cancel button. Callers draw their own label/icon on
+      // top of this.
+      drawButtonChrome(g, x, y, w, h, radius, pressed) {
+        if (pressed) g.fillRoundRect(x, y, w, h, radius, COL_PANEL_HI);
+        g.drawRoundRect(x, y, w, h, radius, COL_BORDER);
+      }
+
       handleTouchDown(tx, ty) {
         this.touchIsDown = true;
         this.pressX = tx;
@@ -2251,6 +2241,14 @@
         }
       }
 
+      // Mirrors firmware's saveLastPage(): only dashboard/clock are
+      // restorable, so wifi_setup/settings transitions never call this.
+      saveLastPage() {
+        if (this.currentPage !== "dashboard" && this.currentPage !== "clock") return;
+        localStorage.setItem("btc_cyd_lastPage", this.currentPage);
+        localStorage.setItem("btc_cyd_clockMode", String(this.clockMode));
+      }
+
       handleTap(tx, ty) {
         if (this.currentPage === "wifi_setup") {
           // Cancel is the only control here — mirrors the firmware's
@@ -2270,11 +2268,13 @@
           if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
               ty >= UI_CLOCK_CLOSE_HIT_Y0 && ty < UI_CLOCK_CLOSE_HIT_Y1) {
             this.currentPage = "dashboard";
+            this.saveLastPage();
             this.render();
             return;
           }
           // Whole-screen tap cycles split → analog → digital → split
           this.clockMode = (this.clockMode + 1) % UI_CLOCK_MODE_COUNT;
+          this.saveLastPage();
           this.render();
           return;
         }
@@ -2291,6 +2291,7 @@
                      tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
                      ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
             this.currentPage = "clock";
+            this.saveLastPage();
             this.render();
           }
           return;
@@ -2353,6 +2354,7 @@
           if (ty < UI_SET_TITLE_H) {
             if (tx < UI_BACK_HIT_X1) {
               this.currentPage = "dashboard";
+              this.saveLastPage();
               this.render();
             }
             return;
@@ -2987,40 +2989,28 @@
 
         const forgetAp = row === ROW_FORGET_AP;
         const title = forgetAp ? "FORGET WI-FI NETWORK?" : "CLEAR CHART HISTORY?";
-        g.setTextColor(COL_TEXT);
-        g.setCursor(Math.floor((SCREEN_W - g.textWidth(title)) / 2), 84);
-        g.print(title);
+        drawCentered(g, 84, title, COL_TEXT, 2);
 
-        g.setTextSize(1);
-        g.setTextColor(COL_TEXT2);
         const l1 = forgetAp ? "The board will disconnect and start a" :
                                "Changing the candle size erases the";
         const l2 = forgetAp ? "setup hotspot for your phone to rejoin it." :
                                "stored chart history and re-downloads it.";
-        g.setCursor(Math.floor((SCREEN_W - g.textWidth(l1)) / 2), 106);
-        g.print(l1);
-        g.setCursor(Math.floor((SCREEN_W - g.textWidth(l2)) / 2), 116);
-        g.print(l2);
+        drawCentered(g, 106, l1, COL_TEXT2, 1);
+        drawCentered(g, 116, l2, COL_TEXT2, 1);
 
         // The pending change, e.g. "5m -> 15m" — not applicable to Forget
         // Wi-Fi network, which isn't a value change, so it's skipped there.
         if (!forgetAp) {
           const preview = `${settingsOptionLabel(row, settingsOptionIndex(row, this.gSettings))} -> ${settingsOptionLabel(row, idx)}`;
-          g.setTextSize(2);
-          g.setTextColor(COL_AMBER);
-          g.setCursor(Math.floor((SCREEN_W - g.textWidth(preview)) / 2), 132);
-          g.print(preview);
+          drawCentered(g, 132, preview, COL_AMBER, 2);
         }
 
         // Buttons (hit zones shared with the tap handler via UI_CONFIRM_*)
-        if (this.pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0, UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1)) {
-          g.fillRoundRect(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
-                          UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
-                          UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, COL_PANEL_HI);
-        }
-        g.drawRoundRect(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
-                        UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
-                        UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, COL_BORDER);
+        const cancelPressed = this.pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
+                                             UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1);
+        this.drawButtonChrome(g, UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
+                              UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
+                              UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, cancelPressed);
         g.setTextSize(2);
         g.setTextColor(COL_TEXT);
         g.setCursor(UI_CONFIRM_CANCEL_X0 + 24, UI_CONFIRM_Y0 + 9);
@@ -3162,11 +3152,9 @@
         const y = UI_CLOCK_CLOSE_BTN_Y;
         const w = UI_CLOCK_CLOSE_BTN_W;
         const h = UI_CLOCK_CLOSE_BTN_H;
-        if (this.pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
-                           UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1)) {
-          g.fillRoundRect(x, y, w, h, 5, COL_PANEL_HI);
-        }
-        g.drawRoundRect(x, y, w, h, 5, COL_BORDER);
+        const pressed = this.pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
+                                       UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1);
+        this.drawButtonChrome(g, x, y, w, h, 5, pressed);
         const ix0 = x + 8, iy0 = y + 6, ix1 = x + w - 9, iy1 = y + h - 7;
         g.drawLine(ix0, iy0, ix1, iy1, COL_AMBER);
         g.drawLine(ix1, iy0, ix0, iy1, COL_AMBER);
@@ -3211,46 +3199,26 @@
         const g = this.gfx;
         g.fillScreen(COL_BG);
 
-        const title = "SETUP MODE";
-        g.setTextSize(2);
-        g.setTextColor(COL_AMBER);
-        g.setCursor(Math.floor((SCREEN_W - g.textWidth(title)) / 2), 20);
-        g.print(title);
+        drawCentered(g, 20, "SETUP MODE", COL_AMBER, 2);
 
         const l1 = "CONNECT YOUR PHONE TO";
         drawCaps(g, Math.floor((SCREEN_W - capsWidth(l1)) / 2), 64, l1, COL_TEXT3);
 
-        g.setTextSize(2);
-        g.setTextColor(COL_TEXT);
-        let w = g.textWidth(WIFI_PORTAL_SSID);
-        g.setCursor(Math.floor((SCREEN_W - w) / 2), 78);
-        g.print(WIFI_PORTAL_SSID);
+        drawCentered(g, 78, WIFI_PORTAL_SSID, COL_TEXT, 2);
 
         const l2 = "THEN OPEN";
         drawCaps(g, Math.floor((SCREEN_W - capsWidth(l2)) / 2), 108, l2, COL_TEXT3);
 
-        const url = "http://192.168.4.1";
-        g.setTextSize(2);
-        g.setTextColor(COL_TEXT);
-        w = g.textWidth(url);
-        g.setCursor(Math.floor((SCREEN_W - w) / 2), 122);
-        g.print(url);
+        drawCentered(g, 122, "http://192.168.4.1", COL_TEXT, 2);
 
         g.drawFastHLine(EDGE, 152, CONTENT_RIGHT - EDGE, COL_GRID);
-        const note = "Cancel keeps the current network.";
-        g.setTextSize(1);
-        g.setTextColor(COL_TEXT3);
-        g.setCursor(Math.floor((SCREEN_W - g.textWidth(note)) / 2), 162);
-        g.print(note);
+        drawCentered(g, 162, "Cancel keeps the current network.", COL_TEXT3, 1);
 
         const pressed = this.pressedIn(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0,
                                        UI_WIFI_SETUP_CANCEL_X1, UI_WIFI_SETUP_CANCEL_Y1);
         const bw = UI_WIFI_SETUP_CANCEL_X1 - UI_WIFI_SETUP_CANCEL_X0;
         const bh = UI_WIFI_SETUP_CANCEL_Y1 - UI_WIFI_SETUP_CANCEL_Y0;
-        if (pressed) {
-          g.fillRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_PANEL_HI);
-        }
-        g.drawRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_BORDER);
+        this.drawButtonChrome(g, UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, pressed);
         g.setTextSize(2);
         g.setTextColor(COL_TEXT);
         g.setCursor(UI_WIFI_SETUP_CANCEL_X0 + 24, UI_WIFI_SETUP_CANCEL_Y0 + 9);
@@ -3665,10 +3633,8 @@
           }
 
           // Settings button: outlined hit target, flush with CONTENT_RIGHT
-          if (this.pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H)) {
-            g.fillRoundRect(CONTENT_RIGHT - 32, 216, 28, 20, 5, COL_PANEL_HI);
-          }
-          g.drawRoundRect(CONTENT_RIGHT - 32, 216, 28, 20, 5, COL_BORDER);
+          const gearPressed = this.pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H);
+          this.drawButtonChrome(g, CONTENT_RIGHT - 32, 216, 28, 20, 5, gearPressed);
           g.drawGear(CONTENT_RIGHT - 18, 226, COL_TEXT2);
         }
 

@@ -228,6 +228,16 @@ static void drawCaps(lgfx::LovyanGFX* g, int x, int y, const char* s, uint16_t c
   }
 }
 
+// Horizontally centers `text` on the full screen width at row `y`, in
+// `color`/`size` — the confirm and Wi-Fi-setup full-screen pages are built
+// almost entirely from lines like this.
+static void drawCentered(lgfx::LovyanGFX* g, int y, const char* text, uint16_t color, int size) {
+  g->setTextSize(size);
+  g->setTextColor(color);
+  g->setCursor((SCREEN_W - g->textWidth(text)) / 2, y);
+  g->print(text);
+}
+
 static void drawWifi(lgfx::LovyanGFX* g, int32_t x, int32_t y, uint16_t color) {
   g->fillCircle(x, y, 1, color);
   g->drawArc(x, y, 3, 3, 225.0f, 315.0f, color);
@@ -241,6 +251,16 @@ static void drawGear(lgfx::LovyanGFX* g, int cx, int cy, uint16_t col) {
   for (int i = 0; i < 8; i++) g->fillRect(cx + tx[i] - 1, cy + ty[i] - 1, 3, 3, col);
   g->fillCircle(cx, cy, 6, col);
   g->fillCircle(cx, cy, 2, COL_BG);  // hub hole
+}
+
+// Outlined button chrome (border + pressed-state fill), the shared shape
+// behind the gear button, both confirm-page CANCEL button, the clock's
+// close "X", and the Wi-Fi setup Cancel button. Callers draw their own
+// label/icon on top — this only handles the border/fill boilerplate.
+static void drawButtonChrome(lgfx::LovyanGFX* g, int x, int y, int w, int h,
+                             int radius, bool pressed) {
+  if (pressed) g->fillRoundRect(x, y, w, h, radius, COL_PANEL_HI);
+  g->drawRoundRect(x, y, w, h, radius, COL_BORDER);
 }
 
 // ── STATUS BAR (y 0..24) ───────────────────────────────────
@@ -588,42 +608,61 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
   }
 }
 
-// ── FOOTER (y 212..238) ────────────────────────────────────
-// Feed-status pulse + wifi glyph left, device stats as a muted micro-line
-// next to them, and the settings gear as an outlined button on the right.
-// Pulse color encodes freshness (green live / amber stale / red offline);
-// it blinks while connecting or while the feed is fresh.
-static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
-  g->drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
-
+// Pulse (r=3), vertically centered on the footer row (same center as the
+// gear button). Color encodes freshness (green live / amber stale / red
+// offline); it blinks while connecting or while the feed is fresh. Split out
+// of drawFooter() so the fast 250ms blink can be redrawn on its own — cheap,
+// direct-to-panel — without paying for a full uiRender()+presentFrame() 4x
+// as often (see updateFeedPulse() in btc_ticker.ino).
+void uiDrawFeedPulse(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t priceOkMs) {
   uint32_t now = millis();
-  uint16_t feedCol;
+  // Track the *slot* (COL_BASE index), not a resolved COL_* value: when `g`
+  // is the palette sprite, COL_* holds palette indices (set by
+  // uiUsePalette()) and fillCircle wants the index; when `g` is the raw
+  // panel (the fast direct-to-panel path in updateFeedPulse(), or the
+  // sprite-alloc-failed fallback), it needs a real RGB565 value instead.
+  // Resolve per-call against COL_BASE/night so this works for both targets.
+  int slot;
   bool pulse = false;
-  if (!st.wifiConnected) {
-    feedCol = COL_BAD;
-  } else if (st.priceOkMs == 0) {
-    feedCol = COL_TEXT2;
+  if (!wifiConnected) {
+    slot = 4;  // BAD
+  } else if (priceOkMs == 0) {
+    slot = 2;  // TEXT2
     pulse = true;
   } else {
     // Freshness is judged against the configured poll cadence: at a 5m
     // interval a 45s-old price is still "live", not "stale".
-    uint32_t age = now - st.priceOkMs;
+    uint32_t age = now - priceOkMs;
     uint32_t freshMs = 2 * settingsPriceIntervalMs() + 3000;
     uint32_t staleMs = 4 * settingsPriceIntervalMs() + 30000;
     if (age <= freshMs) {
-      feedCol = COL_GOOD;
+      slot = 3;  // GOOD
       pulse = true;
     } else {
-      feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
+      slot = age <= staleMs ? 7 : 4;  // AMBER : BAD
     }
   }
-  // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap between them,
-  // vertically centered on the footer row (same center as the gear button).
-  const int pulseX = EDGE + 3;   // 7
-  const int statusY = 226;
-  const int wifiX = pulseX + 3 + 4 + 9;  // 23 — clear of the pulse
   bool dotOn = !pulse || ((now / 500) % 2 == 0);  // 500ms on / 500ms off
-  if (dotOn) g->fillCircle(pulseX, statusY, 3, feedCol);
+  int finalSlot = dotOn ? slot : 0;  // 0 = BG
+  uint16_t color;
+  if (paletteSpr && g == static_cast<lgfx::LovyanGFX*>(paletteSpr)) {
+    color = (uint16_t)finalSlot;
+  } else {
+    color = nightOn ? redOnly(COL_BASE[finalSlot]) : COL_BASE[finalSlot];
+  }
+  g->fillCircle(EDGE + 3, 226, 3, color);
+}
+
+// ── FOOTER (y 212..238) ────────────────────────────────────
+// Feed-status pulse + wifi glyph left, device stats as a muted micro-line
+// next to them, and the settings gear as an outlined button on the right.
+static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
+  g->drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
+
+  uiDrawFeedPulse(g, st.wifiConnected, st.priceOkMs);
+  // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap between them.
+  const int statusY = 226;
+  const int wifiX = EDGE + 3 + 3 + 4 + 9;  // 23 — clear of the pulse
   drawWifi(g, wifiX, statusY, st.wifiConnected ? COL_GOOD : COL_BAD);
 
   char stats[32];
@@ -636,8 +675,7 @@ static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
 
   // Settings button: outlined hit-target look, flush with CONTENT_RIGHT.
   bool pressed = pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H);
-  if (pressed) g->fillRoundRect(CONTENT_RIGHT - 32, 216, 28, 20, 5, COL_PANEL_HI);
-  g->drawRoundRect(CONTENT_RIGHT - 32, 216, 28, 20, 5, COL_BORDER);
+  drawButtonChrome(g, CONTENT_RIGHT - 32, 216, 28, 20, 5, pressed);
   drawGear(g, CONTENT_RIGHT - 18, 226, COL_TEXT2);
 }
 
@@ -880,20 +918,14 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
 
   bool forgetAp = row == ROW_FORGET_AP;
   const char* title = forgetAp ? "FORGET WI-FI NETWORK?" : "CLEAR CHART HISTORY?";
-  g->setTextColor(COL_TEXT);
-  g->setCursor((SCREEN_W - g->textWidth(title)) / 2, 84);
-  g->print(title);
+  drawCentered(g, 84, title, COL_TEXT, 2);
 
-  g->setTextSize(1);
-  g->setTextColor(COL_TEXT2);
   const char* l1 = forgetAp ? "The board will disconnect and start a" :
                               "Changing the candle size erases the";
   const char* l2 = forgetAp ? "setup hotspot for your phone to rejoin it." :
                               "stored chart history and re-downloads it.";
-  g->setCursor((SCREEN_W - g->textWidth(l1)) / 2, 106);
-  g->print(l1);
-  g->setCursor((SCREEN_W - g->textWidth(l2)) / 2, 116);
-  g->print(l2);
+  drawCentered(g, 106, l1, COL_TEXT2, 1);
+  drawCentered(g, 116, l2, COL_TEXT2, 1);
 
   // The pending change, e.g. "5m -> 15m" — not applicable to Forget Wi-Fi
   // network, which isn't a value change, so it's skipped there.
@@ -902,21 +934,15 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
     snprintf(preview, sizeof(preview), "%s -> %s",
              settingsOptionLabel(row, settingsOptionIndex(row)),
              settingsOptionLabel(row, idx));
-    g->setTextSize(2);
-    g->setTextColor(COL_AMBER);
-    g->setCursor((SCREEN_W - g->textWidth(preview)) / 2, 132);
-    g->print(preview);
+    drawCentered(g, 132, preview, COL_AMBER, 2);
   }
 
   // Buttons. Hit zones live in ui.h (UI_CONFIRM_*).
-  if (pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0, UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1)) {
-    g->fillRoundRect(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
-                     UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
-                     UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, COL_PANEL_HI);
-  }
-  g->drawRoundRect(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
+  bool cancelPressed = pressedIn(UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
+                                 UI_CONFIRM_CANCEL_X1, UI_CONFIRM_Y1);
+  drawButtonChrome(g, UI_CONFIRM_CANCEL_X0, UI_CONFIRM_Y0,
                    UI_CONFIRM_CANCEL_X1 - UI_CONFIRM_CANCEL_X0,
-                   UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, COL_BORDER);
+                   UI_CONFIRM_Y1 - UI_CONFIRM_Y0, 6, cancelPressed);
   g->setTextSize(2);
   g->setTextColor(COL_TEXT);
   g->setCursor(UI_CONFIRM_CANCEL_X0 + 24, UI_CONFIRM_Y0 + 9);
@@ -941,47 +967,27 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
 void uiRenderWifiSetup(lgfx::LovyanGFX* g, const char* apSsid) {
   g->fillScreen(COL_BG);
 
-  const char* title = "SETUP MODE";
-  g->setTextSize(2);
-  g->setTextColor(COL_AMBER);
-  g->setCursor((SCREEN_W - g->textWidth(title)) / 2, 20);
-  g->print(title);
+  drawCentered(g, 20, "SETUP MODE", COL_AMBER, 2);
 
   const char* l1 = "CONNECT YOUR PHONE TO";
   drawCaps(g, (SCREEN_W - capsWidth(l1)) / 2, 64, l1, COL_TEXT3);
 
-  g->setTextSize(2);
-  g->setTextColor(COL_TEXT);
-  int w = g->textWidth(apSsid);
-  g->setCursor((SCREEN_W - w) / 2, 78);
-  g->print(apSsid);
+  drawCentered(g, 78, apSsid, COL_TEXT, 2);
 
   const char* l2 = "THEN OPEN";
   drawCaps(g, (SCREEN_W - capsWidth(l2)) / 2, 108, l2, COL_TEXT3);
 
-  const char* url = "http://192.168.4.1";
-  g->setTextSize(2);
-  g->setTextColor(COL_TEXT);
-  w = g->textWidth(url);
-  g->setCursor((SCREEN_W - w) / 2, 122);
-  g->print(url);
+  drawCentered(g, 122, "http://192.168.4.1", COL_TEXT, 2);
 
   g->drawFastHLine(EDGE, 152, CONTENT_RIGHT - EDGE, COL_GRID);
-  const char* note = "Cancel keeps the current network.";
-  g->setTextSize(1);
-  g->setTextColor(COL_TEXT3);
-  g->setCursor((SCREEN_W - g->textWidth(note)) / 2, 162);
-  g->print(note);
+  drawCentered(g, 162, "Cancel keeps the current network.", COL_TEXT3, 1);
 
   // Cancel button — same outlined/pressed-fill pattern as the confirm page.
   bool pressed = pressedIn(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0,
                            UI_WIFI_SETUP_CANCEL_X1, UI_WIFI_SETUP_CANCEL_Y1);
   int bw = UI_WIFI_SETUP_CANCEL_X1 - UI_WIFI_SETUP_CANCEL_X0;
   int bh = UI_WIFI_SETUP_CANCEL_Y1 - UI_WIFI_SETUP_CANCEL_Y0;
-  if (pressed) {
-    g->fillRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_PANEL_HI);
-  }
-  g->drawRoundRect(UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, COL_BORDER);
+  drawButtonChrome(g, UI_WIFI_SETUP_CANCEL_X0, UI_WIFI_SETUP_CANCEL_Y0, bw, bh, 6, pressed);
   g->setTextSize(2);
   g->setTextColor(COL_TEXT);
   g->setCursor(UI_WIFI_SETUP_CANCEL_X0 + 24, UI_WIFI_SETUP_CANCEL_Y0 + 9);
@@ -1153,8 +1159,7 @@ static void drawClockClose(lgfx::LovyanGFX* g) {
   const int h = UI_CLOCK_CLOSE_BTN_H;
   bool pressed = pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
                            UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1);
-  if (pressed) g->fillRoundRect(x, y, w, h, 5, COL_PANEL_HI);
-  g->drawRoundRect(x, y, w, h, 5, COL_BORDER);
+  drawButtonChrome(g, x, y, w, h, 5, pressed);
   // Two diagonals form the X; amber keeps it an interactive affordance.
   const int ix0 = x + 8, iy0 = y + 6, ix1 = x + w - 9, iy1 = y + h - 7;
   g->drawLine(ix0, iy0, ix1, iy1, COL_AMBER);

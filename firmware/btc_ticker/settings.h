@@ -37,7 +37,7 @@ struct Settings {
 };
 extern Settings gSettings;
 
-static const int BRI_COUNT = 6;
+static const int BRI_COUNT = 7;
 extern const uint8_t BRI_VAL[BRI_COUNT];
 extern const char* const BRI_LABEL[BRI_COUNT];
 

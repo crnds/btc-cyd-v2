@@ -138,17 +138,24 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
   all `COL_*` constants to palette indices. Night mode swaps the palette
   to red-only luminance values.
 - **Settings** (`settings.*`): `gSettings` persisted field-by-field in NVS
-  Preferences (namespace `"ticker"`, keys `s.*`), loaded with clamping.
-  `settingsSet()` returns a bitmask of changed rows and auto-adjusts invalid
-  candle-size x range combos that would exceed `MAX_CANDLES`; the caller
-  persists the changed rows and applies side effects (`applySettingChange`
-  in the .ino). The settings UI (`ui.cpp`) groups rows under section headers
-  via the `SET_ITEMS` visual model (independent of the `ROW_*` enum order);
-  binary rows (On/Off) toggle in place without opening the picker, and
-  changing the candle size goes through a full-screen confirmation page
-  first because it wipes the candle DB. Extending the settings page is the
-  intended cheap extension point — add a row enum, option table, labels,
-  a `SET_ITEMS` entry, and a save case.
+  Preferences (namespace `"ticker"`, keys `s.*`), loaded with clamping. Every
+  row's field/label-array/option-count/NVS-key/default lives in one
+  `ROW_META[ROW_COUNT]` table (`settings.cpp`, keyed by `uint8_t Settings::*`
+  member pointers) — `settingsValueLabel()`/`settingsOptionCount()`/
+  `settingsOptionLabel()`/`settingsOptionIndex()`/`settingsSet()`/
+  `settingsLoad()`/`settingsSaveRow()` are all table lookups/loops over it,
+  not per-row switches. `settingsSet()` returns a bitmask of changed rows and
+  auto-adjusts invalid candle-size x range combos that would exceed
+  `MAX_CANDLES`; the caller persists the changed rows and applies side
+  effects (`applySettingChange` in the .ino). The settings UI (`ui.cpp`)
+  groups rows under section headers via the `SET_ITEMS` visual model
+  (independent of the `ROW_*` enum order); binary rows (On/Off) toggle in
+  place without opening the picker, and changing the candle size goes
+  through a full-screen confirmation page first because it wipes the candle
+  DB. Extending the settings page is the intended cheap extension point —
+  add a row enum, a label array, one `ROW_META` entry, and a `SET_ITEMS`
+  entry (mirror the same row in `simulator.html`'s own `ROW_META`, which
+  uses a field-name string instead of a member pointer).
 - **Wi-Fi re-provisioning** (`wifi_creds.*`, `wifi_portal.*`): credentials
   are normally compiled into `config.h`, but `wifi_creds.*` can override that
   from a separate NVS namespace (`"wifi"`, distinct from the `"ticker"`

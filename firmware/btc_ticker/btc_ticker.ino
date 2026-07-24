@@ -144,6 +144,16 @@ static int dragStartScroll = 0;
 static const int DRAG_THRESHOLD_PX = 10;  // resistive touch jitters a few px
 static bool touchFlashOn = false;  // touch level at the last handleTouch pass
 
+// Persists which of the two restorable pages (dashboard or full-screen
+// clock, plus clock face) is current, so setup() can bring it back after a
+// reset. Settings/Wi-Fi-setup aren't restorable — call sites only invoke
+// this on transitions into/within DASHBOARD or CLOCK.
+static void saveLastPage() {
+if (currentPage != Page::DASHBOARD && currentPage != Page::CLOCK) return;
+prefs.putUChar("s.page", currentPage == Page::CLOCK ? 1 : 0);
+prefs.putUChar("s.clkMode", clockMode);
+}
+
 // Persist every row named by a settingsSet() change-mask and apply side
 // effects (brightness, job intervals, candle reset, ...).
 static void applyMask(uint16_t mask) {
@@ -170,11 +180,13 @@ if (currentPage == Page::CLOCK) {
 if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
     ty >= UI_CLOCK_CLOSE_HIT_Y0 && ty < UI_CLOCK_CLOSE_HIT_Y1) {
 currentPage = Page::DASHBOARD;
+saveLastPage();
 renderIfDue(true);
 return;
 }
 // Whole-screen tap cycles the three clock presentations.
 clockMode = (uint8_t)((clockMode + 1) % UI_CLOCK_MODE_COUNT);
+saveLastPage();
 renderIfDue(true);
 return;
 }
@@ -191,6 +203,7 @@ renderIfDue(true);
            ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
 currentPage = Page::CLOCK;
 // Keep last clockMode so re-entry restores the user's preferred face.
+saveLastPage();
 renderIfDue(true);
 }
 return;
@@ -255,6 +268,7 @@ return;
 if (ty < UI_SET_TITLE_H) {
 if (tx < UI_BACK_HIT_X1) {
 currentPage = Page::DASHBOARD;
+saveLastPage();
 renderIfDue(true);
 }
 return;
@@ -358,6 +372,12 @@ static const uint32_t RETRY_MAX_MS = 60000;
 static const uint32_t PRICE_INTERVAL_MS = 1000;  // overwritten from settings in setup()
 static const uint32_t NTP_INTERVAL_MS = 6UL * 3600 * 1000;
 
+// Doubling backoff, capped at RETRY_MAX_MS — shared by the job scheduler
+// below and maybeBackfill()'s own retry timer.
+static uint32_t nextBackoff(uint32_t cur) {
+return cur * 2 > RETRY_MAX_MS ? RETRY_MAX_MS : cur * 2;
+}
+
 static Job jobs[] = {
 {"price", PRICE_INTERVAL_MS, jobPrice, 0, RETRY_BASE_MS},
 {"ntp", NTP_INTERVAL_MS, jobNtp, 0, RETRY_BASE_MS},
@@ -383,7 +403,7 @@ j.next = done + j.interval;
 Serial.printf("[%s] job failed, retry in %lus\n", j.name,
 (unsigned long)(j.backoff / 1000));
 j.next = done + j.backoff;
-j.backoff = j.backoff * 2 > RETRY_MAX_MS ? RETRY_MAX_MS : j.backoff * 2;
+j.backoff = nextBackoff(j.backoff);
 }
 rrStart = (idx + 1) % N;
 break;
@@ -421,7 +441,7 @@ free(buf);
 Serial.printf("backfill failed (limit=%d), retry in %lus\n", limit,
 (unsigned long)(backfillBackoff / 1000));
 backfillNextMs = nowMs + backfillBackoff;
-backfillBackoff = backfillBackoff * 2 > RETRY_MAX_MS ? RETRY_MAX_MS : backfillBackoff * 2;
+backfillBackoff = nextBackoff(backfillBackoff);
 return;
 }
 for (int i = 0; i < n - 1; i++) candlesSetClosed(buf[i]);
@@ -512,12 +532,12 @@ esp_restart();
 }
 }
 
-static void maybeHeapLog() {
+static void maybeHeapLog(uint8_t cpuPct) {
   static uint32_t last = 0;
   uint32_t now = millis();
   if (now - last < 60000UL) return;
   last = now;
-  Serial.printf("heap: %u free\n", (unsigned)ESP.getFreeHeap());
+  Serial.printf("heap: %u free  cpu: %u%%\n", (unsigned)ESP.getFreeHeap(), (unsigned)cpuPct);
 }
 
 // ── device status stats (footer) ───────────────────────────
@@ -614,14 +634,14 @@ static void applyBrightnessDuty(uint8_t duty) {
   gLastBriDuty = duty;
 }
 
-// Dims to 5% brightness while night mode is active, restoring the user's
+// Dims to 1% brightness while night mode is active, restoring the user's
 // chosen brightness setting the rest of the time. Duty is memoised inside
 // applyBrightnessDuty so a brightness-setting change made *while* night
 // mode is active still takes effect the moment night ends (or the moment
 // the user picks a new fixed level / Auto).
 static void applyNightBrightness(bool on) {
   if (on) {
-    applyBrightnessDuty(BRI_VAL[0]);
+    applyBrightnessDuty(BRI_VAL[6]);  // 1% — see settings.cpp
   } else if (gSettings.briIdx == 5) {
     applyBrightnessDuty(getAutoBrightnessVal());
   } else {
@@ -665,6 +685,21 @@ if (touchFlashOn) uiDrawTouchFlash(g);  // one-frame border per touch register
 presentFrame();
 }
 
+// Redraws just the footer feed-status dot, direct-to-panel (bypassing the
+// sprite + full uiRender()/presentFrame() path), so the 250ms blink (ui.cpp)
+// is visible without paying for a full-frame redraw 4x as often — that
+// approach previously pegged CPU% near 100% (renderIfDue()'s dashboard
+// interval briefly dropped to 250ms to chase this same blink; reverted).
+// Only valid while the dashboard is actually the page on screen.
+static void updateFeedPulse() {
+static uint32_t lastMs = 0;
+if (currentPage != Page::DASHBOARD) return;
+uint32_t now = millis();
+if (now - lastMs < 125) return;  // comfortably under the 250ms toggle period
+lastMs = now;
+uiDrawFeedPulse(&gfx, WiFi.status() == WL_CONNECTED, priceOkMs);
+}
+
 // ── SETUP / LOOP ───────────────────────────────────────────
 void setup() {
 Serial.begin(115200);
@@ -688,6 +723,14 @@ prefs.begin("ticker", false);
 prefs.remove("briIdx");  // legacy key, superseded by settings.h's "s.bri"
 settingsLoad(prefs);
 
+// Restore the page the user was actually looking at (dashboard or one of the
+// full-screen clock faces) so a reset/power-cycle doesn't bounce back to the
+// dashboard. Settings/Wi-Fi-setup are transient and never saved here (see
+// saveLastPage()), so a reset mid-settings falls back to the dashboard.
+clockMode = prefs.getUChar("s.clkMode", UI_CLOCK_MODE_SPLIT);
+if (clockMode >= UI_CLOCK_MODE_COUNT) clockMode = UI_CLOCK_MODE_SPLIT;
+currentPage = (prefs.getUChar("s.page", 0) == 1) ? Page::CLOCK : Page::DASHBOARD;
+
 gfx.setRotation(gSettings.flip ? 3 : 1);
 // Seed backlight before the first paint. gLastBriDuty starts as 0xFF so the
 // first applyBrightnessDuty always writes; subsequent renderIfDue calls
@@ -706,6 +749,10 @@ Serial.printf("store: %d candles loaded from flash\n", loaded);
 // paint whatever's on flash immediately, before WiFi/NTP settle
 renderIfDue(true);
 
+// Creds are managed in our own "wifi" NVS namespace (wifi_creds.cpp); disable the
+// WiFi driver's own persistence so its repeated begin() calls in wifiSupervisor()
+// don't churn the shared NVS partition and risk a boot-time full-partition erase.
+WiFi.persistent(false);
 WiFi.mode(WIFI_STA);
 WiFi.setAutoReconnect(true);
 wifiBeginConfigured();
@@ -728,8 +775,9 @@ maybeBackfill();
 candlesTick(lastPrice);
 handleTouch();
 maybeDailyRestart();
-maybeHeapLog();
+maybeHeapLog(gCpuPct);
 renderIfDue();
+updateFeedPulse();
 uint32_t workMs = millis() - loopStart;
 delay(20);
 uint32_t totalMs = millis() - loopStart;

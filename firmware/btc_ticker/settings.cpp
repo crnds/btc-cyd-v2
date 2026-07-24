@@ -3,8 +3,11 @@
 
 Settings gSettings = {4, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1};
 
-const uint8_t BRI_VAL[BRI_COUNT] = {13, 64, 128, 191, 255, 0};
-const char* const BRI_LABEL[BRI_COUNT] = {"5%", "25%", "50%", "75%", "100%", "Auto"};
+// 1% is appended last (not inserted in ascending order) so it doesn't shift
+// indices 0-4 — getAutoBrightnessVal() hardcodes those as its 5 LDR levels,
+// and index 5 is hardcoded elsewhere as the "Auto" special case.
+const uint8_t BRI_VAL[BRI_COUNT] = {13, 64, 128, 191, 255, 0, 3};
+const char* const BRI_LABEL[BRI_COUNT] = {"5%", "25%", "50%", "75%", "100%", "Auto", "1%"};
 
 const uint32_t PRICE_IV_MS[PRICE_IV_COUNT] = {1000, 5000, 10000, 60000, 300000};
 const char* const PRICE_IV_LABEL[PRICE_IV_COUNT] = {"1s", "5s", "10s", "1m", "5m"};
@@ -17,129 +20,79 @@ const char* const RANGE_LABEL[RANGE_COUNT] = {"12h", "24h", "7D"};
 
 const char* const STYLE_LABEL[STYLE_COUNT] = {"Red/Green", "Black/White", "Line"};
 
-static const char* ONOFF_LABEL[2] = {"Off", "On"};
+static const char* const ONOFF_LABEL[2] = {"Off", "On"};
+
+// Per-row metadata: which Settings field a row reads/writes, its option
+// labels/count, and its NVS key/default. Collapses what used to be 4
+// parallel switch(row) statements (one per accessor) plus a 5th in
+// settingsSet and one hand-written line per field in settingsLoad/
+// settingsSaveRow — adding a row now only means one new entry here, not a
+// case in five different places (see AGENTS.md's Settings section).
+// ROW_FORGET_AP is an action row, not a value: field/nvsKey are null and
+// count is 0, so every accessor below falls through to its empty/no-op case.
+struct RowMeta {
+  uint8_t Settings::*field;
+  const char* const* labels;
+  uint8_t count;
+  const char* nvsKey;
+  uint8_t defaultVal;
+};
+
+static const RowMeta ROW_META[ROW_COUNT] = {
+  {&Settings::briIdx,      BRI_LABEL,       BRI_COUNT,       "s.bri",  4},
+  {&Settings::flip,        ONOFF_LABEL,     2,               "s.flip", 0},
+  {&Settings::priceIvIdx,  PRICE_IV_LABEL,  PRICE_IV_COUNT,  "s.pIv",  0},
+  {&Settings::candleIvIdx, CANDLE_IV_LABEL, CANDLE_IV_COUNT, "s.cIv",  0},
+  {&Settings::rangeIdx,    RANGE_LABEL,     RANGE_COUNT,     "s.rng",  1},
+  {&Settings::styleIdx,    STYLE_LABEL,     STYLE_COUNT,     "s.sty",  0},
+  {&Settings::nightEn,     ONOFF_LABEL,     2,               "s.nit",  1},
+  {&Settings::nightForce,  ONOFF_LABEL,     2,               "s.nf",   0},
+  {&Settings::rangeBar,    ONOFF_LABEL,     2,               "s.rbar", 1},
+  {&Settings::showPrice,   ONOFF_LABEL,     2,               "s.spri", 1},
+  {&Settings::showDate,    ONOFF_LABEL,     2,               "s.sdat", 1},
+  {&Settings::showClock,   ONOFF_LABEL,     2,               "s.sclk", 1},
+  {nullptr,                nullptr,         0,               nullptr,  0},
+};
 
 const char* settingsValueLabel(int row) {
-  switch (row) {
-    case ROW_BRIGHTNESS: return BRI_LABEL[gSettings.briIdx];
-    case ROW_FLIP:       return ONOFF_LABEL[gSettings.flip];
-    case ROW_PRICE_IV:   return PRICE_IV_LABEL[gSettings.priceIvIdx];
-    case ROW_CANDLE_IV:  return CANDLE_IV_LABEL[gSettings.candleIvIdx];
-    case ROW_RANGE:      return RANGE_LABEL[gSettings.rangeIdx];
-    case ROW_STYLE:      return STYLE_LABEL[gSettings.styleIdx];
-    case ROW_NIGHT:      return ONOFF_LABEL[gSettings.nightEn];
-    case ROW_NIGHT_FORCE: return ONOFF_LABEL[gSettings.nightForce];
-    case ROW_RANGEBAR:   return ONOFF_LABEL[gSettings.rangeBar];
-    case ROW_SHOW_PRICE: return ONOFF_LABEL[gSettings.showPrice];
-    case ROW_SHOW_DATE:  return ONOFF_LABEL[gSettings.showDate];
-    case ROW_SHOW_CLOCK: return ONOFF_LABEL[gSettings.showClock];
-    default:             return "";
-  }
+  const RowMeta& m = ROW_META[row];
+  return m.field ? m.labels[gSettings.*m.field] : "";
 }
 
 int settingsOptionCount(int row) {
-  switch (row) {
-    case ROW_BRIGHTNESS: return BRI_COUNT;
-    case ROW_FLIP:       return 2;
-    case ROW_PRICE_IV:   return PRICE_IV_COUNT;
-    case ROW_CANDLE_IV:  return CANDLE_IV_COUNT;
-    case ROW_RANGE:      return RANGE_COUNT;
-    case ROW_STYLE:      return STYLE_COUNT;
-    case ROW_NIGHT:      return 2;
-    case ROW_NIGHT_FORCE: return 2;
-    case ROW_RANGEBAR:   return 2;
-    case ROW_SHOW_PRICE: return 2;
-    case ROW_SHOW_DATE:  return 2;
-    case ROW_SHOW_CLOCK: return 2;
-    default:             return 0;
-  }
+  return ROW_META[row].count;
 }
 
 const char* settingsOptionLabel(int row, int idx) {
-  switch (row) {
-    case ROW_BRIGHTNESS: return BRI_LABEL[idx];
-    case ROW_FLIP:       return ONOFF_LABEL[idx];
-    case ROW_PRICE_IV:   return PRICE_IV_LABEL[idx];
-    case ROW_CANDLE_IV:  return CANDLE_IV_LABEL[idx];
-    case ROW_RANGE:      return RANGE_LABEL[idx];
-    case ROW_STYLE:      return STYLE_LABEL[idx];
-    case ROW_NIGHT:      return ONOFF_LABEL[idx];
-    case ROW_NIGHT_FORCE: return ONOFF_LABEL[idx];
-    case ROW_RANGEBAR:   return ONOFF_LABEL[idx];
-    case ROW_SHOW_PRICE: return ONOFF_LABEL[idx];
-    case ROW_SHOW_DATE:  return ONOFF_LABEL[idx];
-    case ROW_SHOW_CLOCK: return ONOFF_LABEL[idx];
-    default:             return "";
-  }
+  const RowMeta& m = ROW_META[row];
+  return m.labels ? m.labels[idx] : "";
 }
 
 uint8_t settingsOptionIndex(int row) {
-  switch (row) {
-    case ROW_BRIGHTNESS: return gSettings.briIdx;
-    case ROW_FLIP:       return gSettings.flip;
-    case ROW_PRICE_IV:   return gSettings.priceIvIdx;
-    case ROW_CANDLE_IV:  return gSettings.candleIvIdx;
-    case ROW_RANGE:      return gSettings.rangeIdx;
-    case ROW_STYLE:      return gSettings.styleIdx;
-    case ROW_NIGHT:      return gSettings.nightEn;
-    case ROW_NIGHT_FORCE: return gSettings.nightForce;
-    case ROW_RANGEBAR:   return gSettings.rangeBar;
-    case ROW_SHOW_PRICE: return gSettings.showPrice;
-    case ROW_SHOW_DATE:  return gSettings.showDate;
-    case ROW_SHOW_CLOCK: return gSettings.showClock;
-    default:             return 0;
-  }
+  const RowMeta& m = ROW_META[row];
+  return m.field ? gSettings.*m.field : 0;
 }
 
 void settingsLoad(Preferences& p) {
-  gSettings.briIdx = p.getUChar("s.bri", 4);
-  gSettings.flip = p.getUChar("s.flip", 0);
-  gSettings.priceIvIdx = p.getUChar("s.pIv", 0);
-  gSettings.candleIvIdx = p.getUChar("s.cIv", 0);
-  gSettings.rangeIdx = p.getUChar("s.rng", 1);
-  gSettings.styleIdx = p.getUChar("s.sty", 0);
-  gSettings.nightEn = p.getUChar("s.nit", 1);
-  gSettings.nightForce = p.getUChar("s.nf", 0);
-  gSettings.rangeBar = p.getUChar("s.rbar", 1);
-  gSettings.showPrice = p.getUChar("s.spri", 1);
-  gSettings.showDate = p.getUChar("s.sdat", 1);
-  gSettings.showClock = p.getUChar("s.sclk", 1);
-
-  if (gSettings.briIdx >= BRI_COUNT) gSettings.briIdx = 4;
-  if (gSettings.flip > 1) gSettings.flip = 0;
-  if (gSettings.priceIvIdx >= PRICE_IV_COUNT) gSettings.priceIvIdx = 0;
-  if (gSettings.candleIvIdx >= CANDLE_IV_COUNT) gSettings.candleIvIdx = 0;
-  if (gSettings.rangeIdx >= RANGE_COUNT) gSettings.rangeIdx = 1;
-  if (gSettings.styleIdx >= STYLE_COUNT) gSettings.styleIdx = 0;
-  if (gSettings.nightEn > 1) gSettings.nightEn = 1;
-  if (gSettings.nightForce > 1) gSettings.nightForce = 0;
-  if (gSettings.rangeBar > 1) gSettings.rangeBar = 1;
-  if (gSettings.showPrice > 1) gSettings.showPrice = 1;
-  if (gSettings.showDate > 1) gSettings.showDate = 1;
-  if (gSettings.showClock > 1) gSettings.showClock = 1;
+  for (int r = 0; r < ROW_COUNT; r++) {
+    const RowMeta& m = ROW_META[r];
+    if (!m.field) continue;  // action row (ROW_FORGET_AP): nothing to load
+    uint8_t v = p.getUChar(m.nvsKey, m.defaultVal);
+    if (v >= m.count) v = m.defaultVal;
+    gSettings.*m.field = v;
+  }
 
   // A combo persisted before this auto-adjust logic existed (or corrupted
-  // NVS) could be invalid on load; fix it up the same way settingsCycle does.
+  // NVS) could be invalid on load; fix it up the same way settingsSet does.
   if ((uint32_t)RANGE_SEC[gSettings.rangeIdx] / CANDLE_IV_SEC[gSettings.candleIvIdx] > (uint32_t)MAX_CANDLES) {
     gSettings.rangeIdx = 1;
   }
 }
 
 void settingsSaveRow(Preferences& p, int row) {
-  switch (row) {
-    case ROW_BRIGHTNESS: p.putUChar("s.bri", gSettings.briIdx); break;
-    case ROW_FLIP:       p.putUChar("s.flip", gSettings.flip); break;
-    case ROW_PRICE_IV:   p.putUChar("s.pIv", gSettings.priceIvIdx); break;
-    case ROW_CANDLE_IV:  p.putUChar("s.cIv", gSettings.candleIvIdx); break;
-    case ROW_RANGE:      p.putUChar("s.rng", gSettings.rangeIdx); break;
-    case ROW_STYLE:      p.putUChar("s.sty", gSettings.styleIdx); break;
-    case ROW_NIGHT:      p.putUChar("s.nit", gSettings.nightEn); break;
-    case ROW_NIGHT_FORCE: p.putUChar("s.nf", gSettings.nightForce); break;
-    case ROW_RANGEBAR:   p.putUChar("s.rbar", gSettings.rangeBar); break;
-    case ROW_SHOW_PRICE: p.putUChar("s.spri", gSettings.showPrice); break;
-    case ROW_SHOW_DATE:  p.putUChar("s.sdat", gSettings.showDate); break;
-    case ROW_SHOW_CLOCK: p.putUChar("s.sclk", gSettings.showClock); break;
-  }
+  const RowMeta& m = ROW_META[row];
+  if (!m.field) return;  // action row: nothing to persist
+  p.putUChar(m.nvsKey, gSettings.*m.field);
 }
 
 uint16_t settingsSet(int row, uint8_t idx) {
@@ -148,20 +101,7 @@ uint16_t settingsSet(int row, uint8_t idx) {
   if (idx == settingsOptionIndex(row)) return 0;
 
   uint16_t mask = (uint16_t)(1u << row);
-  switch (row) {
-    case ROW_BRIGHTNESS: gSettings.briIdx = idx; break;
-    case ROW_FLIP:       gSettings.flip = idx; break;
-    case ROW_PRICE_IV:   gSettings.priceIvIdx = idx; break;
-    case ROW_CANDLE_IV:  gSettings.candleIvIdx = idx; break;
-    case ROW_RANGE:      gSettings.rangeIdx = idx; break;
-    case ROW_STYLE:      gSettings.styleIdx = idx; break;
-    case ROW_NIGHT:      gSettings.nightEn = idx; break;
-    case ROW_NIGHT_FORCE: gSettings.nightForce = idx; break;
-    case ROW_RANGEBAR:   gSettings.rangeBar = idx; break;
-    case ROW_SHOW_PRICE: gSettings.showPrice = idx; break;
-    case ROW_SHOW_DATE:  gSettings.showDate = idx; break;
-    case ROW_SHOW_CLOCK: gSettings.showClock = idx; break;
-  }
+  gSettings.*ROW_META[row].field = idx;
 
   uint32_t count = RANGE_SEC[gSettings.rangeIdx] / CANDLE_IV_SEC[gSettings.candleIvIdx];
   if (count > (uint32_t)MAX_CANDLES) {
