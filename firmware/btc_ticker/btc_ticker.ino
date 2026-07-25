@@ -116,8 +116,14 @@ float dayHigh = NAN;  // 24h high/low from the ticker payload, for the range bar
 float dayLow = NAN;
 uint32_t priceOkMs = 0;
 
-enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK, WIFI_SETUP };
+enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK, WIFI_SETUP, SPLASH };
 static Page currentPage = Page::DASHBOARD;
+// Set when setup() enters Page::SPLASH (no cached candles to paint yet);
+// millis() timestamp the loader phase and the exit timeout are measured from.
+static uint32_t splashStartMs = 0;
+// Bounded so a Wi-Fi/feed outage can't leave the splash up forever — the
+// dashboard's own CONNECTING/OFFLINE placeholders (ui.cpp) take over instead.
+static const uint32_t SPLASH_TIMEOUT_MS = 20000;
 static int settingsScroll = 0;  // px, 0..uiSettingsMaxScroll()
 static int pickerRow = -1;      // -1 = settings list, >=0 = option picker for that row
 static int confirmIdx = -1;     // >=0 = confirmation page showing, pending option idx for pickerRow
@@ -164,6 +170,8 @@ applySettingChange(mask);
 }
 
 static void handleTap(int tx, int ty) {
+if (currentPage == Page::SPLASH) return;  // no controls during boot
+
 if (currentPage == Page::WIFI_SETUP) {
 // Cancel is the only control on this page; reboots immediately. Safe
 // no-op — credentials were already cleared and nothing new was saved,
@@ -454,6 +462,19 @@ backfillBackoff = RETRY_BASE_MS;
 backfillNextMs = nowMs;
 }
 
+// ── boot splash exit (checked every loop() pass while it's showing) ──
+// Leaves Page::SPLASH the moment there's real data to show (first successful
+// price fetch), or unconditionally after SPLASH_TIMEOUT_MS so a Wi-Fi/feed
+// outage can't strand the user on the loading screen — either way the
+// dashboard itself already knows how to render "still connecting"/"offline".
+static void maybeExitSplash() {
+if (currentPage != Page::SPLASH) return;
+if (priceOkMs != 0 || millis() - splashStartMs > SPLASH_TIMEOUT_MS) {
+currentPage = Page::DASHBOARD;
+renderIfDue(true);
+}
+}
+
 // ── apply a settings change live (called right after settingsCycle) ──
 static void applySettingChange(uint16_t mask) {
 // Brightness itself is applied by applyNightBrightness (called every
@@ -669,6 +690,8 @@ if (currentPage == Page::SETTINGS) {
   uiRenderClock(g, clockMode);
 } else if (currentPage == Page::WIFI_SETUP) {
   uiRenderWifiSetup(g, WIFI_PORTAL_SSID);
+} else if (currentPage == Page::SPLASH) {
+  uiRenderSplash(g, WiFi.status() == WL_CONNECTED, millis() - splashStartMs);
 } else {
 UiState st;
 st.wifiConnected = WiFi.status() == WL_CONNECTED;
@@ -747,6 +770,16 @@ jobs[0].interval = settingsPriceIntervalMs();
 int loaded = storeInit(settingsCandleSeconds());
 Serial.printf("store: %d candles loaded from flash\n", loaded);
 
+// Fresh device (or a DB just wiped by a candle-size change): nothing useful
+// to paint from flash, so show the boot splash instead of the dashboard's
+// bare "--" price / "OFFLINE — NO CACHED DATA" placeholder while Wi-Fi
+// connects and the first price payload arrives. Skipped if the restored
+// page is the full-screen clock — that doesn't need price data at all.
+if (loaded == 0 && currentPage == Page::DASHBOARD) {
+  currentPage = Page::SPLASH;
+  splashStartMs = millis();
+}
+
 // paint whatever's on flash immediately, before WiFi/NTP settle
 renderIfDue(true);
 
@@ -774,6 +807,7 @@ wifiSupervisor();
 serviceJobs();
 maybeBackfill();
 candlesTick(lastPrice);
+maybeExitSplash();
 handleTouch();
 maybeDailyRestart();
 maybeHeapLog(gCpuPct);

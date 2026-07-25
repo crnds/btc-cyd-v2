@@ -56,6 +56,16 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx);
 // including wifi_portal.h, so ui.cpp stays presentation-only.
 void uiRenderWifiSetup(lgfx::LovyanGFX* g, const char* apSsid);
 
+// Renders the full-screen boot splash shown only when there is no cached
+// candle data yet (fresh device, or right after a candle-size change wipes
+// the DB) — any reset with existing flash data paints the dashboard from
+// that cache immediately instead (see setup()'s "paint whatever's on flash"
+// comment). No touch controls; the .ino exits back to the dashboard on the
+// first successful price fetch, or after a timeout if Wi-Fi/the feed never
+// comes up. `wifiConnected` picks the status line; `elapsedMs` (millis()
+// since the splash started) drives the 3-dot loader phase.
+void uiRenderSplash(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t elapsedMs);
+
 // Renders the full-screen clock page. `mode` cycles on whole-screen tap:
 //   0 = split (analog left 50% + 24h digital right 50%)
 //   1 = big analog only

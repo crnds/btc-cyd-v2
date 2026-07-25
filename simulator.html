@@ -998,6 +998,10 @@
     const CANDLE_COUNT = 288;
     let CANDLE_SECONDS = 300;
     const NTP_VALID_EPOCH = 1700000000;
+    // Mirrors the firmware's SPLASH_TIMEOUT_MS — bounds how long the boot
+    // splash can show before falling back to the dashboard's own
+    // CONNECTING/OFFLINE placeholders.
+    const SPLASH_TIMEOUT_MS = 20000;
 
     // Colors mirroring the redesigned firmware palette in ui.cpp (RGB565
     // decoded to hex). Signal colors only: green/red = market direction,
@@ -1497,6 +1501,19 @@
       g.setTextColor(color);
       g.setCursor(Math.floor((SCREEN_W - g.textWidth(text)) / 2), y);
       g.print(text);
+    }
+
+    // Three-dot "loading" indicator (mirrors drawLoadingDots() in ui.cpp),
+    // one phase per second. Shared between the boot splash and the chart's
+    // "no candle data yet" state; `timeMs` is whatever the caller wants to
+    // derive the phase from.
+    function drawLoadingDots(g, cx, cy, timeMs) {
+      const phase = Math.floor(timeMs / 500) % 3;
+      const spacing = 14;
+      const startX = cx - spacing;
+      for (let i = 0; i < 3; i++) {
+        g.fillCircle(startX + i * spacing, cy, 3, i === phase ? COL_AMBER : COL_BORDER);
+      }
     }
 
     // ── KEYLESS LIVE DATA PROVIDERS ──────────────────────────
@@ -2047,6 +2064,14 @@
         // Mount FS
         this.mountLittleFS();
 
+        // Fresh device (or a DB just wiped) — mirrors the firmware's
+        // `loaded == 0` splash entry in setup(). Skipped if the restored
+        // page is the full-screen clock, which needs no price data.
+        if (this.candlesLoadedCount === 0 && this.currentPage === "dashboard") {
+          this.currentPage = "splash";
+          this.splashStartMs = this.getSimMillis();
+        }
+
         this.render();
       }
 
@@ -2068,7 +2093,13 @@
         if (this.gSettings.showDate === undefined) this.gSettings.showDate = 1;
         if (this.gSettings.showClock === undefined) this.gSettings.showClock = 1;
         CANDLE_SECONDS = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
-        this.applySettingChange(0xFF); // Apply all settings on load
+        // Apply all settings on load EXCEPT the candle-DB wipe: that branch
+        // of applySettingChange is for a live user-driven interval change
+        // (mirrors the firmware's candlesReset() call from applyMask()) —
+        // running it on every boot would erase the persisted /candles.bin
+        // that's supposed to survive resets, which the firmware never does
+        // (settingsLoad() in setup() has no such side effect).
+        this.applySettingChange(0xFF & ~(1 << ROW_CANDLE_IV));
       }
 
       initDefaultSettings() {
@@ -2245,6 +2276,8 @@
       }
 
       handleTap(tx, ty) {
+        if (this.currentPage === "splash") return;  // no controls during boot
+
         if (this.currentPage === "wifi_setup") {
           // Cancel is the only control here — mirrors the firmware's
           // esp_restart() with a return to the dashboard, standing in for
@@ -2378,6 +2411,11 @@
       mountLittleFS() {
         this.log("INFO", "LFS", "Mounting LittleFS filesystem... OK");
 
+        // Mirrors firmware's storeInit() return value (count of valid records
+        // loaded) — reset() uses this to decide whether to show the boot
+        // splash (mirrors the .ino's `loaded == 0` check).
+        this.candlesLoadedCount = 0;
+
         if (!this.isFsHealthy) {
           this.log("ERROR", "LFS", "LittleFS mount failed (corrupted sectors). Reformatting...");
           this.wipeDb();
@@ -2399,6 +2437,7 @@
                 count++;
               }
             });
+            this.candlesLoadedCount = count;
             this.log("INFO", "LFS", `Loaded ${count} candles from /candles.bin`);
           } catch(e) {
             this.log("ERROR", "LFS", "Error reading /candles.bin. Recreating zero-filled.");
@@ -2452,6 +2491,14 @@
 
         // Feed price to candles engine
         this.candlesTick(this.lastPrice);
+
+        // Boot splash exit — mirrors maybeExitSplash() in btc_ticker.ino.
+        if (this.currentPage === "splash") {
+          const elapsedMs = this.getSimMillis() - this.splashStartMs;
+          if (this.priceOkMs !== 0 || elapsedMs > SPLASH_TIMEOUT_MS) {
+            this.currentPage = "dashboard";
+          }
+        }
 
         // Update inspector elements periodically (e.g. heap size fluctuations)
         if (Math.random() < 0.05) {
@@ -3186,6 +3233,32 @@
         this.drawClockClose(g);
       }
 
+      // ── BOOT SPLASH — mirrors uiRenderSplash in ui.cpp ──
+      // Shown only when candlesLoadedCount was 0 at mount (see reset()); no
+      // touch controls (handleTouchDown ignores taps on this page).
+      renderSplash() {
+        const g = this.gfx;
+        g.fillScreen(COL_BG);
+
+        const cx = Math.floor(SCREEN_W / 2);
+        const cy = 92;
+        g.drawCircle(cx, cy, 30, COL_AMBER);
+        g.drawCircle(cx, cy, 29, COL_AMBER);
+        g.setTextSize(4);
+        g.setTextColor(COL_AMBER);
+        g.setCursor(cx - Math.floor(g.textWidth("B") / 2), cy - 16);
+        g.print("B");
+
+        const brand = "BTC TICKER";
+        drawCaps(g, cx - Math.floor(capsWidth(brand) / 2), 138, brand, COL_TEXT3);
+
+        const status = this.wifiConnected ? "Fetching market data" : "Connecting to Wi-Fi";
+        drawCentered(g, 160, status, COL_TEXT2, 2);
+
+        const elapsedMs = this.getSimMillis() - this.splashStartMs;
+        drawLoadingDots(g, cx, 196, elapsedMs);
+      }
+
       // ── WI-FI SETUP ("FIND ACCESS MODE") — mirrors uiRenderWifiSetup ──
       // Purely informational mockup: there's no real second device for the
       // simulator to provision, so Cancel (the only control) just returns to
@@ -3249,6 +3322,8 @@
           this.renderClock();
         } else if (this.currentPage === "wifi_setup") {
           this.renderWifiSetup();
+        } else if (this.currentPage === "splash") {
+          this.renderSplash();
         } else {
           // ── DASHBOARD (mirrors uiRender in ui.cpp) ──
           g.fillScreen(COL_BG);
@@ -3450,9 +3525,16 @@
           }
 
           if (!haveRange) {
-            // Empty state: name it instead of leaving a void
-            const msg = this.wifiConnected ? "WAITING FOR MARKET FEED" : "OFFLINE — NO CACHED DATA";
-            drawCaps(g, x0 + Math.floor((plotW - capsWidth(msg)) / 2), CHART_Y0 + Math.floor(CHART_H / 2) - 4, msg, COL_TEXT3);
+            // Empty state: Wi-Fi up means this is transient (backfill/gap-
+            // repair in flight) — a spinner beats a static label going stale.
+            // Wi-Fi down: name the actual problem instead, since nothing's
+            // in flight.
+            if (this.wifiConnected) {
+              drawLoadingDots(g, x0 + Math.floor(plotW / 2), CHART_Y0 + Math.floor(CHART_H / 2), this.getSimMillis());
+            } else {
+              const msg = "OFFLINE — NO CACHED DATA";
+              drawCaps(g, x0 + Math.floor((plotW - capsWidth(msg)) / 2), CHART_Y0 + Math.floor(CHART_H / 2) - 4, msg, COL_TEXT3);
+            }
           } else {
             let span = rangeMax - rangeMin;
             if (span < 1.0) span = 1.0;

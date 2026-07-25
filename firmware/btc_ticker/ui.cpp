@@ -269,6 +269,21 @@ static void drawCentered(lgfx::LovyanGFX* g, int y, const char* text, uint16_t c
   g->print(text);
 }
 
+// Three-dot "loading" indicator, one phase per second — matches the 1Hz
+// renderIfDue cadence (a faster phase would just judder since nothing forces
+// extra renders while this is on screen). Shared between the boot splash and
+// the chart's "no candle data yet" state; `timeMs` is whatever the caller
+// wants to derive the phase from (elapsed-since-start for the splash, plain
+// millis() for the chart, where there's no fixed start to measure from).
+static void drawLoadingDots(lgfx::LovyanGFX* g, int cx, int cy, uint32_t timeMs) {
+  int phase = (int)((timeMs / 500) % 3);
+  const int spacing = 14;
+  int startX = cx - spacing;
+  for (int i = 0; i < 3; i++) {
+    g->fillCircle(startX + i * spacing, cy, 3, i == phase ? COL_AMBER : COL_BORDER);
+  }
+}
+
 static void drawWifi(lgfx::LovyanGFX* g, int32_t x, int32_t y, uint16_t color) {
   g->fillCircle(x, y, 1, color);
   g->drawArc(x, y, 3, 3, 225.0f, 315.0f, color);
@@ -469,10 +484,17 @@ static void drawChart(lgfx::LovyanGFX* g, const UiState& st) {
   }
 
   if (!haveRange) {
-    // Empty state (fresh boot with a wiped DB and no feed yet): name the
-    // state instead of leaving a void between the range bar and the footer.
-    const char* msg = st.wifiConnected ? "WAITING FOR MARKET FEED" : "OFFLINE — NO CACHED DATA";
-    drawCaps(g, x0 + (plotW - capsWidth(msg)) / 2, cY0 + cH / 2 - 4, msg, COL_TEXT3);
+    // Empty state (fresh boot with a wiped DB and no feed yet), instead of
+    // leaving a void between the range bar and the footer. Wi-Fi up: this is
+    // transient (backfill/gap-repair in flight) — a spinner says "working on
+    // it" without a static label going stale. Wi-Fi down: name the actual
+    // problem instead — nothing is in flight, so a spinner would be a lie.
+    if (st.wifiConnected) {
+      drawLoadingDots(g, x0 + plotW / 2, cY0 + cH / 2, millis());
+    } else {
+      const char* msg = "OFFLINE — NO CACHED DATA";
+      drawCaps(g, x0 + (plotW - capsWidth(msg)) / 2, cY0 + cH / 2 - 4, msg, COL_TEXT3);
+    }
     return;
   }
   float span = rangeMax - rangeMin;
@@ -993,6 +1015,32 @@ void uiRenderConfirm(lgfx::LovyanGFX* g, int row, int idx) {
   g->setTextColor(COL_BG);
   g->setCursor(UI_CONFIRM_OK_X0 + 18, UI_CONFIRM_Y0 + 9);
   g->print("CONFIRM");
+}
+
+// ── BOOT SPLASH ─────────────────────────────────────────────
+// See ui.h for when this is shown/exited. Built from the same tokens as the
+// confirm/Wi-Fi-setup full-screen pages (drawCentered/drawCaps, COL_AMBER
+// accent) so it reads as part of the same design system, not a bolted-on
+// screen.
+void uiRenderSplash(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t elapsedMs) {
+  g->fillScreen(COL_BG);
+
+  const int cx = SCREEN_W / 2;
+  const int cy = 92;
+  g->drawCircle(cx, cy, 30, COL_AMBER);
+  g->drawCircle(cx, cy, 29, COL_AMBER);
+  g->setTextSize(4);
+  g->setTextColor(COL_AMBER);
+  g->setCursor(cx - g->textWidth("B") / 2, cy - 16);
+  g->print("B");
+
+  const char* brand = "BTC TICKER";
+  drawCaps(g, cx - capsWidth(brand) / 2, 138, brand, COL_TEXT3);
+
+  const char* status = wifiConnected ? "Fetching market data" : "Connecting to Wi-Fi";
+  drawCentered(g, 160, status, COL_TEXT2, 2);
+
+  drawLoadingDots(g, cx, 196, elapsedMs);
 }
 
 // ── WI-FI SETUP ("FIND ACCESS MODE") ───────────────────────
