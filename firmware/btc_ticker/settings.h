@@ -22,7 +22,7 @@ enum SettingRow : uint8_t {
 enum ChartStyle : uint8_t { STYLE_RG = 0, STYLE_BW = 1, STYLE_LINE = 2 };
 
 struct Settings {
-  uint8_t briIdx;       // index into BRI_VAL/BRI_LABEL, default 4 (100%)
+  uint8_t briIdx;       // index into BRI_VAL/BRI_LABEL, default 5 (100%)
   uint8_t flip;         // 0 = normal, 1 = rotated 180
   uint8_t priceIvIdx;   // index into PRICE_IV_MS/PRICE_IV_LABEL, default 0 (1s)
   uint8_t candleIvIdx;  // index into CANDLE_IV_SEC/CANDLE_IV_LABEL, default 0 (5m)

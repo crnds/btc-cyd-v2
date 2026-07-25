@@ -233,26 +233,6 @@
       z-index: 5;
     }
 
-    .bezel-text-top {
-      position: absolute;
-      top: 6px;
-      color: #73828C;
-      font-size: 7px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      font-family: var(--mono);
-    }
-    .bezel-text-bottom {
-      position: absolute;
-      bottom: 4px;
-      color: #73828C;
-      font-size: 7px;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      font-family: var(--mono);
-    }
-
     .silkscreen-title {
       position: absolute;
       top: 15px;
@@ -746,12 +726,10 @@
         <div class="silkscreen-sub">SMART DISPLAY 320x240</div>
 
         <div class="lcd-bezel">
-          <div class="bezel-text-top">ILI9341 2.8" TFT</div>
           <div class="lcd-screen" id="lcdScreen" title="Tap the gear button (bottom right) for Settings; drag the settings list to scroll">
             <canvas id="screenCanvas" width="320" height="240"></canvas>
             <div class="lcd-glare"></div>
           </div>
-          <div class="bezel-text-bottom">RESISTIVE TOUCH CONTROLLER</div>
         </div>
 
         <div class="esp32-module">
@@ -1065,7 +1043,7 @@
       ""
     ];
 
-    const BRI_LABEL = ["5%", "25%", "50%", "75%", "100%", "Auto", "1%"];
+    const BRI_LABEL = ["1%", "5%", "25%", "50%", "75%", "100%", "Auto"];
     const PRICE_IV_LABEL = ["1s", "5s", "10s", "1m", "5m"];
     const PRICE_IV_MS = [1000, 5000, 10000, 60000, 300000];
     const CANDLE_IV_LABEL = ["5m", "15m", "1h", "4h"];
@@ -1232,12 +1210,30 @@
     const CONTENT_TOP    = 30;
     const CONTENT_TOP_NO_STATUS = EDGE;  // status bar fully empty (no clock, no date)
     const CHART_Y0_BOTH  = 92;   // price + range bar
+    const CHART_Y0_BOTH_NO_STATUS  = 66;  // price + range bar, clock+date also hidden
     const CHART_Y0_PRICE = 72;   // price only
+    const CHART_Y0_PRICE_NO_STATUS = 46;  // price only, clock+date also hidden
     const CHART_Y0_RANGE = 50;   // range bar only
+    const CHART_Y0_RANGE_NO_STATUS = 24;  // range bar only, clock+date also hidden
     const RANGE_Y_TXT_PRICE = 72;
     const RANGE_Y_TRK_PRICE = 76;
+    const RANGE_Y_TXT_PRICE_NO_STATUS = 46;
+    const RANGE_Y_TRK_PRICE_NO_STATUS = 50;
     const RANGE_Y_TXT_TOP   = 30;
     const RANGE_Y_TRK_TOP   = 34;
+    const RANGE_Y_TXT_TOP_NO_STATUS = 4;
+    const RANGE_Y_TRK_TOP_NO_STATUS = 8;
+    // Price hero y-coordinates (mirrors ui.cpp drawPriceRow), and their
+    // siblings for when the status bar strip is also reclaimed (clock and
+    // date both hidden) — same uniform 26px shift as the constants above.
+    const PRICE_DOLLAR_Y   = 50;
+    const PRICE_DOLLAR_Y_NO_STATUS = 24;
+    const PRICE_VAL_Y      = 34;
+    const PRICE_VAL_Y_NO_STATUS = 8;
+    const PRICE_CHIP_Y     = 39;
+    const PRICE_CHIP_Y_NO_STATUS = 13;
+    const PRICE_CHIP_TXT_Y = 43;
+    const PRICE_CHIP_TXT_Y_NO_STATUS = 17;
 
     // Helper for formatting large numbers with commas
     function fmtCommas(v) {
@@ -1895,7 +1891,7 @@
         this.dragging = false;
         this.dragStartScroll = 0;
         this.gSettings = {
-          briIdx: 4,
+          briIdx: 5,
           flip: 0,
           priceIvIdx: 0,
           candleIvIdx: 0,
@@ -2077,7 +2073,7 @@
 
       initDefaultSettings() {
         this.gSettings = {
-          briIdx: 4,
+          briIdx: 5,
           flip: 0,
           priceIvIdx: 0,
           candleIvIdx: 0,
@@ -2101,35 +2097,34 @@
       // else fixed BRI_VAL. Only rewrite the canvas filter when the duty changes
       // so the sim doesn't flash the way the old unconditional setBrightness path did.
       applyBrightness() {
-        // 1% is appended last (index 6), matching settings.cpp's BRI_VAL —
-        // it isn't one of the 0-4 auto-brightness levels or the index-5
-        // "Auto" special case, so it needs its own filter step below.
-        const briVal = [13, 64, 128, 191, 255, 0, 3];
+        // 1% is first in order (index 0), matching settings.cpp's BRI_VAL —
+        // indices 1..5 are the LDR levels, and index 6 is the "Auto" special case.
+        const briVal = [3, 13, 64, 128, 191, 255, 0];
         let displayIdx = this.gSettings.briIdx;
         if (this.gfx.nightMode) {
-          displayIdx = 6; // Forced to 1% in night mode
-        } else if (displayIdx === 5) {
-          displayIdx = 2; // Simulated auto brightness sits at 50%
+          displayIdx = 0; // Forced to 1% in night mode
+        } else if (displayIdx === 6) {
+          displayIdx = 3; // Simulated auto brightness sits at 50%
         }
 
         const duty = briVal[displayIdx];
         const labelIdx = this.gSettings.briIdx;
         document.getElementById("backlightVal").innerText =
-          labelIdx === 5 ? "Auto" : `${labelIdx} (PWM ${briVal[labelIdx]})`;
+          labelIdx === 6 ? "Auto" : `${labelIdx} (PWM ${briVal[labelIdx]})`;
 
         if (this._lastBriDuty === duty) return;
         this._lastBriDuty = duty;
 
         const canvas = document.getElementById("screenCanvas");
-        if (displayIdx === 6) {
+        if (displayIdx === 0) {
           canvas.style.filter = "brightness(8%)";
-        } else if (displayIdx === 0) {
-          canvas.style.filter = "brightness(15%)";
         } else if (displayIdx === 1) {
-          canvas.style.filter = "brightness(40%)";
+          canvas.style.filter = "brightness(15%)";
         } else if (displayIdx === 2) {
-          canvas.style.filter = "brightness(65%)";
+          canvas.style.filter = "brightness(40%)";
         } else if (displayIdx === 3) {
+          canvas.style.filter = "brightness(65%)";
+        } else if (displayIdx === 4) {
           canvas.style.filter = "brightness(85%)";
         } else {
           canvas.style.filter = "brightness(100%)";
@@ -2313,7 +2308,8 @@
               this.pickerRow = -1;
               this.render();
             } else if (tx >= UI_CONFIRM_CANCEL_X0 && tx < UI_CONFIRM_CANCEL_X1) {
-              this.confirmIdx = -1;  // back to the picker, nothing changed
+              if (this.pickerRow === ROW_FORGET_AP) this.pickerRow = -1;  // no options page to return to
+              this.confirmIdx = -1;  // back to the picker (or list), nothing changed
               this.render();
             }
           }
@@ -3309,6 +3305,12 @@
           // 2. Price hero: left-aligned "$" + digits, 24h change as a chip
           // Hidden via the "Price" settings row; chart reflows into the gap.
           if (this.gSettings.showPrice) {
+            const priceNoStatus = !this.gSettings.showClock && !this.gSettings.showDate;
+            const yDollar = priceNoStatus ? PRICE_DOLLAR_Y_NO_STATUS : PRICE_DOLLAR_Y;
+            const yVal = priceNoStatus ? PRICE_VAL_Y_NO_STATUS : PRICE_VAL_Y;
+            const yChip = priceNoStatus ? PRICE_CHIP_Y_NO_STATUS : PRICE_CHIP_Y;
+            const yChipTxt = priceNoStatus ? PRICE_CHIP_TXT_Y_NO_STATUS : PRICE_CHIP_TXT_Y;
+
             let valStr = "--";
             if (!isNaN(this.lastPrice)) {
               valStr = fmtCommas(this.lastPrice + 0.5);
@@ -3321,12 +3323,12 @@
 
             g.setTextSize(2);
             g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT2);
-            g.setCursor(EDGE, 50);
+            g.setCursor(EDGE, yDollar);
             g.print("$");
 
             g.setTextSize(4);
             g.setTextColor(isNaN(this.lastPrice) ? COL_TEXT3 : COL_TEXT);
-            g.setCursor(EDGE + wDollar + 2, 34);
+            g.setCursor(EDGE + wDollar + 2, yVal);
             g.print(valStr);
 
             let chipText, chipFill, chipTextCol;
@@ -3345,9 +3347,9 @@
             const chipW = chipTextW + 16;
             let chipX = EDGE + wDollar + 2 + wVal + 10;
             if (chipX + chipW > CONTENT_RIGHT) chipX = CONTENT_RIGHT - chipW;
-            g.fillRoundRect(chipX, 39, chipW, 22, 6, chipFill);
+            g.fillRoundRect(chipX, yChip, chipW, 22, 6, chipFill);
             g.setTextColor(chipTextCol);
-            g.setCursor(chipX + 8, 43);
+            g.setCursor(chipX + 8, yChipTxt);
             g.print(chipText);
           }
 
@@ -3359,8 +3361,13 @@
             g.setTextSize(1);
             const wLow = g.textWidth(lowStr);
             const wHigh = g.textWidth(highStr);
-            const Y_TXT = this.gSettings.showPrice ? RANGE_Y_TXT_PRICE : RANGE_Y_TXT_TOP;
-            const Y_TRK = this.gSettings.showPrice ? RANGE_Y_TRK_PRICE : RANGE_Y_TRK_TOP;
+            const hasStatus = this.gSettings.showClock || this.gSettings.showDate;
+            const Y_TXT = this.gSettings.showPrice
+              ? (hasStatus ? RANGE_Y_TXT_PRICE : RANGE_Y_TXT_PRICE_NO_STATUS)
+              : (hasStatus ? RANGE_Y_TXT_TOP : RANGE_Y_TXT_TOP_NO_STATUS);
+            const Y_TRK = this.gSettings.showPrice
+              ? (hasStatus ? RANGE_Y_TRK_PRICE : RANGE_Y_TRK_PRICE_NO_STATUS)
+              : (hasStatus ? RANGE_Y_TRK_TOP : RANGE_Y_TRK_TOP_NO_STATUS);
             const xL = EDGE + wLow + 8;
             const xH = CONTENT_RIGHT - wHigh - 8;
 
@@ -3382,12 +3389,19 @@
           // 4. Chart: gridlines, candles/line, axis labels, last-price marker
           // Stretch upward into price / range-bar strips when those rows are off,
           // and into the status bar itself once clock + date are both hidden too.
+          const chartHasStatus = this.gSettings.showClock || this.gSettings.showDate;
           let CHART_Y0;
-          if (this.gSettings.showPrice && this.gSettings.rangeBar) CHART_Y0 = CHART_Y0_BOTH;
-          else if (this.gSettings.showPrice) CHART_Y0 = CHART_Y0_PRICE;
-          else if (this.gSettings.rangeBar) CHART_Y0 = CHART_Y0_RANGE;
-          else if (this.gSettings.showClock || this.gSettings.showDate) CHART_Y0 = CONTENT_TOP;
-          else CHART_Y0 = CONTENT_TOP_NO_STATUS;
+          if (this.gSettings.showPrice && this.gSettings.rangeBar) {
+            CHART_Y0 = chartHasStatus ? CHART_Y0_BOTH : CHART_Y0_BOTH_NO_STATUS;
+          } else if (this.gSettings.showPrice) {
+            CHART_Y0 = chartHasStatus ? CHART_Y0_PRICE : CHART_Y0_PRICE_NO_STATUS;
+          } else if (this.gSettings.rangeBar) {
+            CHART_Y0 = chartHasStatus ? CHART_Y0_RANGE : CHART_Y0_RANGE_NO_STATUS;
+          } else if (chartHasStatus) {
+            CHART_Y0 = CONTENT_TOP;
+          } else {
+            CHART_Y0 = CONTENT_TOP_NO_STATUS;
+          }
           const CHART_H = AXIS_Y - CHART_Y0;
           const candleSeconds = CANDLE_IV_SEC[this.gSettings.candleIvIdx];
           const count = Math.min(288, Math.floor(RANGE_SEC[this.gSettings.rangeIdx] / candleSeconds));

@@ -230,7 +230,8 @@ confirmIdx = -1;
 pickerRow = -1;  // back to the list, which now shows the new value
 renderIfDue(true);
 } else if (tx >= UI_CONFIRM_CANCEL_X0 && tx < UI_CONFIRM_CANCEL_X1) {
-confirmIdx = -1;  // back to the picker, nothing changed
+if (pickerRow == ROW_FORGET_AP) pickerRow = -1;  // no options page to return to
+confirmIdx = -1;  // back to the picker (or list), nothing changed
 renderIfDue(true);
 }
 }
@@ -583,7 +584,7 @@ static const int AUTO_BRI_HYST = 200;       // ADC counts of deadband around eac
 static const int AUTO_BRI_SAMPLES = 8;      // average this many analogRead()s
 static const uint32_t AUTO_BRI_MIN_MS = 1500; // don't re-decide more often than this
 
-static uint8_t gAutoBriLevel = 2;          // last selected level 0..4 (start mid)
+static uint8_t gAutoBriLevel = 3;          // last selected level 1..5 (start mid: 3 = 50%)
 static uint32_t gAutoBriLastMs = 0;
 static uint8_t gLastBriDuty = 0xFF;        // last duty pushed to the panel
 
@@ -608,11 +609,11 @@ static uint8_t getAutoBrightnessVal() {
   uint8_t level = gAutoBriLevel;
 
   // Climb while clearly above the upward threshold for the next step.
-  while (level < 4 && ldr >= AUTO_BRI_THRESH[level] + AUTO_BRI_HYST) {
+  while (level < 5 && ldr >= AUTO_BRI_THRESH[level - 1] + AUTO_BRI_HYST) {
     level++;
   }
   // Drop while clearly below the downward threshold for the current step.
-  while (level > 0 && ldr < AUTO_BRI_THRESH[level - 1] - AUTO_BRI_HYST) {
+  while (level > 1 && ldr < AUTO_BRI_THRESH[level - 2] - AUTO_BRI_HYST) {
     level--;
   }
 
@@ -641,8 +642,8 @@ static void applyBrightnessDuty(uint8_t duty) {
 // the user picks a new fixed level / Auto).
 static void applyNightBrightness(bool on) {
   if (on) {
-    applyBrightnessDuty(BRI_VAL[6]);  // 1% — see settings.cpp
-  } else if (gSettings.briIdx == 5) {
+    applyBrightnessDuty(BRI_VAL[0]);  // 1% — see settings.cpp
+  } else if (gSettings.briIdx == 6) {
     applyBrightnessDuty(getAutoBrightnessVal());
   } else {
     applyBrightnessDuty(BRI_VAL[gSettings.briIdx]);
@@ -735,7 +736,7 @@ gfx.setRotation(gSettings.flip ? 3 : 1);
 // Seed backlight before the first paint. gLastBriDuty starts as 0xFF so the
 // first applyBrightnessDuty always writes; subsequent renderIfDue calls
 // only rewrite when the duty actually changes.
-if (gSettings.briIdx == 5) {
+if (gSettings.briIdx == 6) {
   applyBrightnessDuty(getAutoBrightnessVal());
 } else {
   applyBrightnessDuty(BRI_VAL[gSettings.briIdx]);

@@ -21,7 +21,11 @@ static const size_t WIFI_CREDS_PASS_LEN = 64;
 // left untouched) if none are stored.
 bool wifiCredsLoad(char* ssid, size_t ssidLen, char* pass, size_t passLen);
 
-// Persists ssid/pass, truncating to the buffer sizes above if needed.
+// Persists ssid/pass into NVS via Preferences::putString(), which stores
+// the string exactly as given (no truncation here). Callers must enforce
+// WIFI_CREDS_SSID_LEN/WIFI_CREDS_PASS_LEN before calling (see
+// wifi_portal.cpp's handleSave()); wifiCredsLoad() truncates on read as a
+// second line of defense if a caller doesn't.
 void wifiCredsSave(const char* ssid, const char* pass);
 
 // Erases stored credentials so the next wifiCredsLoad() call reports none.

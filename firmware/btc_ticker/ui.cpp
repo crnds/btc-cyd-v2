@@ -119,37 +119,68 @@ static const int AXIS_Y        = 190;  // x-axis hairline; labels live 196..204
 static const int CONTENT_TOP   = 30;   // first content row under the status bar
 static const int CONTENT_TOP_NO_STATUS = EDGE;  // status bar fully empty (no clock, no date)
 // Stacked layout tops (plot is [y0, AXIS_Y)):
-//   price+range → 92, price only → 72, range only → 50, neither → 30 (or 4
-//   if the clock and date are both hidden too — see chartY0())
+//   price+range → 92, price only → 72,
+//   range only → 50 (or 24 if the clock and date are also both hidden),
+//   neither → 30 (or 4 if the clock and date are both hidden too — see chartY0())
 static const int CHART_Y0_BOTH  = 92;
+static const int CHART_Y0_BOTH_NO_STATUS  = 66;
 static const int CHART_Y0_PRICE = 72;
+static const int CHART_Y0_PRICE_NO_STATUS = 46;
 static const int CHART_Y0_RANGE = 50;
+static const int CHART_Y0_RANGE_NO_STATUS = 24;
 // Range-bar label/track y when stacked under the status bar (price hidden)
-// vs under the price hero. Track is vertically centered on the 8px labels.
+// vs under the price hero vs with the status bar itself reclaimed (clock and
+// date both hidden). Track is vertically centered on the 8px labels.
 static const int RANGE_Y_TXT_PRICE = 72;
 static const int RANGE_Y_TRK_PRICE = 76;
+static const int RANGE_Y_TXT_PRICE_NO_STATUS = 46;
+static const int RANGE_Y_TRK_PRICE_NO_STATUS = 50;
 static const int RANGE_Y_TXT_TOP   = 30;
 static const int RANGE_Y_TRK_TOP   = 34;
+static const int RANGE_Y_TXT_TOP_NO_STATUS = 4;
+static const int RANGE_Y_TRK_TOP_NO_STATUS = 8;
+// Price hero y-coordinates (see drawPriceRow), and their siblings for when
+// the status bar strip is also reclaimed (clock and date both hidden) — same
+// uniform 26px shift as the constants above (CONTENT_TOP - CONTENT_TOP_NO_STATUS).
+static const int PRICE_DOLLAR_Y   = 50;
+static const int PRICE_DOLLAR_Y_NO_STATUS = 24;
+static const int PRICE_VAL_Y      = 34;
+static const int PRICE_VAL_Y_NO_STATUS = 8;
+static const int PRICE_CHIP_Y     = 39;
+static const int PRICE_CHIP_Y_NO_STATUS = 13;
+static const int PRICE_CHIP_TXT_Y = 43;
+static const int PRICE_CHIP_TXT_Y_NO_STATUS = 17;
 
 // Layout depends on the Price / Range bar toggles only (not data
 // availability) so the chart doesn't jump when the first payload arrives.
 // When neither claims the space, the chart also reclaims the status bar
 // strip itself once it's genuinely empty (clock and date both hidden) —
-// otherwise it stays under the fixed CONTENT_TOP so the date has room.
+// otherwise it stays under the fixed CONTENT_TOP so the date has room. The
+// range-bar-only case reclaims that same strip the same way.
+// True once the status bar strip itself is empty (clock and date both
+// hidden) and so available to be reclaimed by whatever's stacked above it.
+static bool statusReclaimed() { return !gSettings.showClock && !gSettings.showDate; }
+
 static int chartY0() {
-  if (gSettings.showPrice && gSettings.rangeBar) return CHART_Y0_BOTH;
-  if (gSettings.showPrice) return CHART_Y0_PRICE;
-  if (gSettings.rangeBar) return CHART_Y0_RANGE;
-  if (gSettings.showClock || gSettings.showDate) return CONTENT_TOP;
-  return CONTENT_TOP_NO_STATUS;
+  bool noStatus = statusReclaimed();
+  if (gSettings.showPrice && gSettings.rangeBar) {
+    return noStatus ? CHART_Y0_BOTH_NO_STATUS : CHART_Y0_BOTH;
+  }
+  if (gSettings.showPrice) return noStatus ? CHART_Y0_PRICE_NO_STATUS : CHART_Y0_PRICE;
+  if (gSettings.rangeBar) return noStatus ? CHART_Y0_RANGE_NO_STATUS : CHART_Y0_RANGE;
+  return noStatus ? CONTENT_TOP_NO_STATUS : CONTENT_TOP;
 }
 static int chartH() { return AXIS_Y - chartY0(); }
 
 static int rangeBarTxtY() {
-  return gSettings.showPrice ? RANGE_Y_TXT_PRICE : RANGE_Y_TXT_TOP;
+  bool noStatus = statusReclaimed();
+  if (gSettings.showPrice) return noStatus ? RANGE_Y_TXT_PRICE_NO_STATUS : RANGE_Y_TXT_PRICE;
+  return noStatus ? RANGE_Y_TXT_TOP_NO_STATUS : RANGE_Y_TXT_TOP;
 }
 static int rangeBarTrkY() {
-  return gSettings.showPrice ? RANGE_Y_TRK_PRICE : RANGE_Y_TRK_TOP;
+  bool noStatus = statusReclaimed();
+  if (gSettings.showPrice) return noStatus ? RANGE_Y_TRK_PRICE_NO_STATUS : RANGE_Y_TRK_PRICE;
+  return noStatus ? RANGE_Y_TRK_TOP_NO_STATUS : RANGE_Y_TRK_TOP;
 }
 
 // Pressed-point state for pressed-state highlights (see uiSetPressedPoint).
@@ -321,10 +352,16 @@ static void drawStatusBar(lgfx::LovyanGFX* g, const UiState& st) {
   }
 }
 
-// ── PRICE HERO (y 30..66) ──────────────────────────────────
+// ── PRICE HERO (y 30..66, or 4..40 with the status bar reclaimed) ──
 // Left-aligned (reading gravity). The 24h change is a filled directional
 // chip — the one element besides the price meant to read at arm's length.
 static void drawPriceRow(lgfx::LovyanGFX* g, const UiState& st) {
+  bool noStatus = statusReclaimed();
+  int yDollar = noStatus ? PRICE_DOLLAR_Y_NO_STATUS : PRICE_DOLLAR_Y;
+  int yVal = noStatus ? PRICE_VAL_Y_NO_STATUS : PRICE_VAL_Y;
+  int yChip = noStatus ? PRICE_CHIP_Y_NO_STATUS : PRICE_CHIP_Y;
+  int yChipTxt = noStatus ? PRICE_CHIP_TXT_Y_NO_STATUS : PRICE_CHIP_TXT_Y;
+
   String valStr = "--";
   if (!isnan(st.price)) valStr = fmtCommas((long)(st.price + 0.5f));
 
@@ -333,15 +370,15 @@ static void drawPriceRow(lgfx::LovyanGFX* g, const UiState& st) {
   g->setTextSize(4);
   int wVal = g->textWidth(valStr);
 
-  // "$" baseline-aligned with the digits (both bottoms at y=66).
+  // "$" baseline-aligned with the digits.
   g->setTextSize(2);
   g->setTextColor(isnan(st.price) ? COL_TEXT3 : COL_TEXT2);
-  g->setCursor(EDGE, 50);
+  g->setCursor(EDGE, yDollar);
   g->print("$");
 
   g->setTextSize(4);
   g->setTextColor(isnan(st.price) ? COL_TEXT3 : COL_TEXT);
-  g->setCursor(EDGE + wDollar + 2, 34);
+  g->setCursor(EDGE + wDollar + 2, yVal);
   g->print(valStr);
 
   // Change chip (or a neutral state chip before the first payload).
@@ -362,9 +399,9 @@ static void drawPriceRow(lgfx::LovyanGFX* g, const UiState& st) {
   int chipW = chipTextW + 16;
   int chipX = EDGE + wDollar + 2 + wVal + 10;
   if (chipX + chipW > CONTENT_RIGHT) chipX = CONTENT_RIGHT - chipW;  // extreme prices
-  g->fillRoundRect(chipX, 39, chipW, 22, 6, chipFill);
+  g->fillRoundRect(chipX, yChip, chipW, 22, 6, chipFill);
   g->setTextColor(chipText);
-  g->setCursor(chipX + 8, 43);
+  g->setCursor(chipX + 8, yChipTxt);
   g->print(chipBuf);
 }
 

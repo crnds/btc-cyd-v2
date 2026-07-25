@@ -1,13 +1,13 @@
 #include "settings.h"
 #include "candles.h"
 
-Settings gSettings = {4, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1};
+Settings gSettings = {5, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1};
 
-// 1% is appended last (not inserted in ascending order) so it doesn't shift
-// indices 0-4 — getAutoBrightnessVal() hardcodes those as its 5 LDR levels,
-// and index 5 is hardcoded elsewhere as the "Auto" special case.
-const uint8_t BRI_VAL[BRI_COUNT] = {13, 64, 128, 191, 255, 0, 3};
-const char* const BRI_LABEL[BRI_COUNT] = {"5%", "25%", "50%", "75%", "100%", "Auto", "1%"};
+// 1% is first in order (1%, 5%, 25%, 50%, 75%, 100%, Auto).
+// getAutoBrightnessVal() maps to indices 1-5 as its 5 LDR levels,
+// and index 6 is hardcoded elsewhere as the "Auto" special case.
+const uint8_t BRI_VAL[BRI_COUNT] = {3, 13, 64, 128, 191, 255, 0};
+const char* const BRI_LABEL[BRI_COUNT] = {"1%", "5%", "25%", "50%", "75%", "100%", "Auto"};
 
 const uint32_t PRICE_IV_MS[PRICE_IV_COUNT] = {1000, 5000, 10000, 60000, 300000};
 const char* const PRICE_IV_LABEL[PRICE_IV_COUNT] = {"1s", "5s", "10s", "1m", "5m"};
@@ -39,7 +39,7 @@ struct RowMeta {
 };
 
 static const RowMeta ROW_META[ROW_COUNT] = {
-  {&Settings::briIdx,      BRI_LABEL,       BRI_COUNT,       "s.bri",  4},
+  {&Settings::briIdx,      BRI_LABEL,       BRI_COUNT,       "s.bri",  5},
   {&Settings::flip,        ONOFF_LABEL,     2,               "s.flip", 0},
   {&Settings::priceIvIdx,  PRICE_IV_LABEL,  PRICE_IV_COUNT,  "s.pIv",  0},
   {&Settings::candleIvIdx, CANDLE_IV_LABEL, CANDLE_IV_COUNT, "s.cIv",  0},

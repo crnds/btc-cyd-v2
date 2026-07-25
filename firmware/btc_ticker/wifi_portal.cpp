@@ -52,6 +52,11 @@ static void handleSave() {
     server.send(400, "text/plain", "SSID required");
     return;
   }
+  // Clamp at save time so a non-standard client that ignores the form's
+  // maxlength can't silently get truncated later at wifiCredsLoad() time
+  // instead, which would leave WiFi.begin() retrying a mangled password.
+  if (ssid.length() > WIFI_CREDS_SSID_LEN - 1) ssid = ssid.substring(0, WIFI_CREDS_SSID_LEN - 1);
+  if (pass.length() > WIFI_CREDS_PASS_LEN - 1) pass = pass.substring(0, WIFI_CREDS_PASS_LEN - 1);
   wifiCredsSave(ssid.c_str(), pass.c_str());
   server.send(200, "text/html", SAVED_HTML);
   // Give the response time to flush over TCP before tearing everything down.
