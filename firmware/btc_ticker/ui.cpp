@@ -6,12 +6,13 @@
 #include <string.h>
 
 // ── DESIGN SYSTEM ──────────────────────────────────────────
-// 15-color palette (fits the 4-bit palette sprite's 16 entries). Color is
-// spent on signal only: green/red for market direction, amber for the BTC
-// brand accent and interactive affordances; everything structural stays in
-// a neutral dark-gray ramp (BG < GRID < BORDER < PANEL < PANEL_HI) so data
-// always outranks chrome. Contrast vs panel fills is >= 4.5:1 for all text
-// colors (WCAG AA on-device).
+// 16-color palette (fills the 4-bit palette sprite's 16 entries exactly).
+// Color is spent on signal only: green/red for market direction, amber for
+// the BTC brand accent and interactive affordances, blue for the weather
+// rain glyph; everything structural stays in a neutral dark-gray ramp
+// (BG < GRID < BORDER < PANEL < PANEL_HI) so data always outranks chrome.
+// Contrast vs panel fills is >= 4.5:1 for all text colors (WCAG AA
+// on-device).
 //
 // RGB565 defaults; uiUsePalette() remaps these to palette indices when the
 // frame buffer is a palette sprite, so every draw call below works unchanged
@@ -33,6 +34,7 @@ static const uint16_t COL_BASE[] = {
   0x7411,  // TEXT3     #73828C  muted micro-labels (still >= 4.5:1 on PANEL)
   0x18E4,  // GRID      #181D21  chart gridlines / hairlines
   0x59E2,  // AMBER_DIM #5A3D10  last-price line / line-chart area fill
+  0x561E,  // BLUE      #52C2F7  weather rain-icon accent (only use of blue)
 };
 static const int COL_COUNT = sizeof(COL_BASE) / sizeof(COL_BASE[0]);
 
@@ -51,6 +53,7 @@ static uint16_t COL_PANEL_HI = COL_BASE[11];
 static uint16_t COL_TEXT3    = COL_BASE[12];
 static uint16_t COL_GRID     = COL_BASE[13];
 static uint16_t COL_AMBER_DIM = COL_BASE[14];
+static uint16_t COL_BLUE      = COL_BASE[15];
 
 // Non-null only in palette-sprite mode (set by uiUsePalette); null means the
 // direct-to-panel fallback, where the COL_* globals hold real RGB565 values.
@@ -77,6 +80,7 @@ static void applyColors(const uint16_t* rgb) {
   COL_BAD_DIM = rgb[6];  COL_AMBER = rgb[7];    COL_BORDER = rgb[8];
   COL_BW_BULL_DIM = rgb[9];  COL_PANEL = rgb[10];  COL_PANEL_HI = rgb[11];
   COL_TEXT3 = rgb[12];   COL_GRID = rgb[13];    COL_AMBER_DIM = rgb[14];
+  COL_BLUE = rgb[15];
 }
 
 // Switch the whole UI between normal and red-only colors. Cheap and
@@ -101,6 +105,7 @@ void uiUsePalette(lgfx::LGFX_Sprite& spr) {
   COL_BAD = 4;      COL_GOOD_DIM = 5; COL_BAD_DIM = 6; COL_AMBER = 7;
   COL_BORDER = 8;   COL_BW_BULL_DIM = 9;  COL_PANEL = 10;  COL_PANEL_HI = 11;
   COL_TEXT3 = 12;   COL_GRID = 13;    COL_AMBER_DIM = 14;
+  COL_BLUE = 15;
 }
 
 // ── LAYOUT (4px grid; nothing renders past CONTENT_RIGHT) ──
@@ -109,6 +114,11 @@ static const int SCREEN_H      = 240;
 static const int PAD_RIGHT     = 0;
 static const int CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 320
 static const int EDGE          = 4;  // standard left inset
+
+// Every full-screen page (dashboard, Clock, Weather, HOME) reserves this
+// much space at the bottom for the shared footer (see uiDrawFooter()) — its
+// hairline sits right at this y. Page content must stay above it.
+static const int CONTENT_BOTTOM = 212;
 
 // Chart footprint: fixed 288px-wide plot so the candle width is always
 // >= 1px even at the maximum of MAX_CANDLES visible candles. The bottom
@@ -297,6 +307,32 @@ static void drawGear(lgfx::LovyanGFX* g, int cx, int cy, uint16_t col) {
   for (int i = 0; i < 8; i++) g->fillRect(cx + tx[i] - 1, cy + ty[i] - 1, 3, 3, col);
   g->fillCircle(cx, cy, 6, col);
   g->fillCircle(cx, cy, 2, COL_BG);  // hub hole
+}
+
+// Simple pitched-roof house glyph for the footer Home button — a filled
+// triangle roof over a square body with a door notch, in the same
+// hand-drawn-glyph family as drawGear()/drawWifi(). `r` is the roof's
+// half-width/height budget.
+static void drawHomeIcon(lgfx::LovyanGFX* g, int cx, int cy, int r, uint16_t col) {
+  g->fillTriangle(cx - r, cy, cx, cy - r, cx + r, cy, col);
+  int bodyW = r * 2 - 2;
+  int bodyH = r;
+  g->fillRect(cx - bodyW / 2, cy, bodyW, bodyH, col);
+  g->fillRect(cx - 1, cy + bodyH - (r / 2 + 1), 3, r / 2 + 1, COL_BG);  // door notch
+}
+
+// Wall-calendar glyph for the HOME tile: rounded body, two hanger-ring
+// tabs, and an amber "today" square — echoes the full Calendar page's
+// today-highlight without drawing live date data (a static icon, like the
+// Clock tile's fixed 10:10 face). `r` is the body's half-width/height budget.
+static void drawCalendarIcon(lgfx::LovyanGFX* g, int cx, int cy, int r) {
+  int w = r * 2 - 2, h = r * 2 - 4;
+  int x0 = cx - w / 2, y0 = cy - h / 2;
+  g->drawRoundRect(x0, y0, w, h, 3, COL_TEXT2);
+  g->drawFastHLine(x0, y0 + 5, w, COL_TEXT2);
+  g->fillRect(x0 + 3, y0 - 3, 2, 5, COL_TEXT2);
+  g->fillRect(x0 + w - 5, y0 - 3, 2, 5, COL_TEXT2);
+  g->fillRect(cx - 3, y0 + h - 8, 6, 5, COL_AMBER);
 }
 
 // Outlined button chrome (border + pressed-state fill), the shared shape
@@ -713,29 +749,35 @@ void uiDrawFeedPulse(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t priceOkMs)
 }
 
 // ── FOOTER (y 212..238) ────────────────────────────────────
-// Feed-status pulse + wifi glyph left, device stats as a muted micro-line
-// next to them, and the settings gear as an outlined button on the right.
-static void drawFooter(lgfx::LovyanGFX* g, const UiState& st) {
-  g->drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
+// Feed-status pulse + wifi glyph + muted device stats on the left, a Home
+// button on the right. Shared by every full-screen page (dashboard, Clock,
+// Weather, HOME, and the top-level Settings list) — each ends its render
+// with this call. The Home button (UI_FOOTER_HOME_* in ui.h) is the only way
+// out of an app now — btc_ticker.ino's handleTap() checks the same hit box.
+void uiDrawFooter(lgfx::LovyanGFX* g, const UiFooterStatus& fs) {
+  g->drawFastHLine(EDGE, CONTENT_BOTTOM, CONTENT_RIGHT - EDGE, COL_GRID);
 
-  uiDrawFeedPulse(g, st.wifiConnected, st.priceOkMs);
+  uiDrawFeedPulse(g, fs.wifiConnected, fs.priceOkMs);
   // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap between them.
   const int statusY = 226;
   const int wifiX = EDGE + 3 + 3 + 4 + 9;  // 23 — clear of the pulse
-  drawWifi(g, wifiX, statusY, st.wifiConnected ? COL_GOOD : COL_BAD);
+  drawWifi(g, wifiX, statusY, fs.wifiConnected ? COL_GOOD : COL_BAD);
 
   char stats[32];
   snprintf(stats, sizeof(stats), "CPU %02u%%  RAM %02u%%  ROM %02u%%",
-           (unsigned)st.cpuPct, (unsigned)st.ramPct, (unsigned)st.romPct);
+           (unsigned)fs.cpuPct, (unsigned)fs.ramPct, (unsigned)fs.romPct);
   g->setTextSize(1);
   g->setTextColor(COL_TEXT3);
   g->setCursor(wifiX + 9 + 6, 222);
   g->print(stats);
 
-  // Settings button: outlined hit-target look, flush with CONTENT_RIGHT.
-  bool pressed = pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H);
-  drawButtonChrome(g, CONTENT_RIGHT - 32, 216, 28, 20, 5, pressed);
-  drawGear(g, CONTENT_RIGHT - 18, 226, COL_TEXT2);
+  bool homePressed = pressedIn(UI_FOOTER_HOME_X0, UI_FOOTER_HOME_Y0,
+                               UI_FOOTER_HOME_X1, UI_FOOTER_HOME_Y1);
+  drawButtonChrome(g, UI_FOOTER_HOME_X0, UI_FOOTER_HOME_Y0, UI_FOOTER_HOME_W,
+                   UI_FOOTER_HOME_H, 4, homePressed);
+  drawHomeIcon(g, (UI_FOOTER_HOME_X0 + UI_FOOTER_HOME_X1) / 2,
+               (UI_FOOTER_HOME_Y0 + UI_FOOTER_HOME_Y1) / 2, 9,
+               homePressed ? COL_AMBER : COL_TEXT2);
 }
 
 void uiRender(lgfx::LovyanGFX* g, const UiState& st) {
@@ -744,7 +786,8 @@ void uiRender(lgfx::LovyanGFX* g, const UiState& st) {
   if (gSettings.showPrice) drawPriceRow(g, st);
   drawRangeBar(g, st);
   drawChart(g, st);
-  drawFooter(g, st);
+  UiFooterStatus fs{st.wifiConnected, st.priceOkMs, st.cpuPct, st.romPct, st.ramPct};
+  uiDrawFooter(g, fs);
 }
 
 // ── SETTINGS: MODEL ────────────────────────────────────────
@@ -776,25 +819,32 @@ static const char* const SETTINGS_ROW_DESC[ROW_COUNT] = {
 // Visual order of the grouped list — independent of the ROW_* enum so the
 // IA can evolve without touching settings logic. Binary rows (2 options)
 // toggle in place; wider rows open the picker.
+//
+// Grouped by scope, not by data domain: GLOBAL holds device-wide settings
+// (apply no matter which app/page is on screen — brightness, orientation,
+// night mode, and the Wi-Fi reset action all fit here); BTC TICKER holds
+// everything that only affects that one app (polling/candle/chart config
+// plus its own status-bar Clock/Date toggles — those hide/show elements of
+// the *ticker's* status bar, not the full-screen CLOCK app). CLOCK has no
+// configurable settings yet, so it has no section here; add one (and a
+// ROW_META entry) the day it needs one.
 struct SetItem { uint8_t row; const char* header; };
 static const SetItem SET_ITEMS[] = {
-  {0xFF, "MARKET DATA"},
+  {0xFF, "GLOBAL"},
+  {ROW_BRIGHTNESS, nullptr},
+  {ROW_FLIP, nullptr},
+  {ROW_NIGHT, nullptr},
+  {ROW_NIGHT_FORCE, nullptr},
+  {ROW_FORGET_AP, nullptr},
+  {0xFF, "BTC TICKER"},
   {ROW_PRICE_IV, nullptr},
   {ROW_CANDLE_IV, nullptr},
   {ROW_RANGE, nullptr},
-  {0xFF, "CHART"},
   {ROW_STYLE, nullptr},
   {ROW_SHOW_PRICE, nullptr},
   {ROW_RANGEBAR, nullptr},
-  {0xFF, "DISPLAY"},
-  {ROW_BRIGHTNESS, nullptr},
-  {ROW_FLIP, nullptr},
   {ROW_SHOW_CLOCK, nullptr},
   {ROW_SHOW_DATE, nullptr},
-  {ROW_NIGHT, nullptr},
-  {ROW_NIGHT_FORCE, nullptr},
-  {0xFF, "NETWORK"},
-  {ROW_FORGET_AP, nullptr},
 };
 static const int SET_ITEM_COUNT = sizeof(SET_ITEMS) / sizeof(SET_ITEMS[0]);
 static const int SET_HDR_H = 26;
@@ -808,12 +858,13 @@ static int setItemTop(int i) {
 
 int uiSettingsMaxScroll() {
   int total = setItemTop(SET_ITEM_COUNT) - UI_SET_TITLE_H;
-  int max = total - (SCREEN_H - UI_SET_TITLE_H);
+  int max = total - (CONTENT_BOTTOM - UI_SET_TITLE_H);  // leaves room for the shared footer
   return max > 0 ? max : 0;
 }
 
 int uiSettingsItemAt(int scrollPx, int ty) {
-  if (ty < UI_SET_TITLE_H) return -1;
+  // Below CONTENT_BOTTOM is the shared footer's Home button, not a row.
+  if (ty < UI_SET_TITLE_H || ty >= CONTENT_BOTTOM) return -1;
   for (int i = 0; i < SET_ITEM_COUNT; i++) {
     int h = SET_ITEMS[i].header ? SET_HDR_H : SET_ROW_H;
     int y = setItemTop(i) - scrollPx;
@@ -838,14 +889,20 @@ int uiPickerOptionAt(int row, int ty) {
 }
 
 // ── SETTINGS: CHROME ───────────────────────────────────────
-// "< " back affordance + page title, left-aligned; hairline below.
-static void drawSettingsTitle(lgfx::LovyanGFX* g, const char* title) {
+// Page title, left-aligned; hairline below. `showBack` draws the "< "
+// affordance ahead of the title — used by the picker (back to the list) but
+// not the top-level list, which exits via its footer Home button instead.
+static void drawSettingsTitle(lgfx::LovyanGFX* g, const char* title, bool showBack) {
   g->setTextSize(2);
-  g->setTextColor(COL_AMBER);
-  g->setCursor(8, 7);
-  g->print("<");
+  int titleX = 8;
+  if (showBack) {
+    g->setTextColor(COL_AMBER);
+    g->setCursor(8, 7);
+    g->print("<");
+    titleX = 28;
+  }
   g->setTextColor(COL_TEXT);
-  g->setCursor(28, 7);
+  g->setCursor(titleX, 7);
   g->print(title);
   g->drawFastHLine(0, UI_SET_TITLE_H - 1, CONTENT_RIGHT, COL_GRID);
 }
@@ -860,18 +917,18 @@ static void drawToggle(lgfx::LovyanGFX* g, int x, int y, bool on) {
   }
 }
 
-void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx) {
+void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx, const UiFooterStatus& fs) {
   g->fillScreen(COL_BG);
 
-  // Rows scroll under the fixed title bar — clip so a half-scrolled row
-  // can't paint over it.
-  g->setClipRect(0, UI_SET_TITLE_H, SCREEN_W, SCREEN_H - UI_SET_TITLE_H);
+  // Rows scroll under the fixed title bar, above the shared footer — clip
+  // so a half-scrolled row can't paint over either.
+  g->setClipRect(0, UI_SET_TITLE_H, SCREEN_W, CONTENT_BOTTOM - UI_SET_TITLE_H);
 
   for (int i = 0; i < SET_ITEM_COUNT; i++) {
     bool isHdr = SET_ITEMS[i].header != nullptr;
     int h = isHdr ? SET_HDR_H : SET_ROW_H;
     int y = setItemTop(i) - scrollPx;
-    if (y + h <= UI_SET_TITLE_H || y >= SCREEN_H) continue;
+    if (y + h <= UI_SET_TITLE_H || y >= CONTENT_BOTTOM) continue;
 
     if (isHdr) {
       drawCaps(g, 12, y + 10, SET_ITEMS[i].header, COL_TEXT3);
@@ -915,7 +972,7 @@ void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx) {
   // Scrollbar thumb, flush against CONTENT_RIGHT.
   int maxScroll = uiSettingsMaxScroll();
   if (maxScroll > 0) {
-    int viewH = SCREEN_H - UI_SET_TITLE_H;
+    int viewH = CONTENT_BOTTOM - UI_SET_TITLE_H;
     int listH = viewH + maxScroll;
     int thumbH = viewH * viewH / listH;
     if (thumbH < 12) thumbH = 12;
@@ -924,12 +981,13 @@ void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx) {
   }
 
   g->clearClipRect();
-  drawSettingsTitle(g, "Settings");
+  drawSettingsTitle(g, "Settings", false);
+  uiDrawFooter(g, fs);
 }
 
 void uiRenderSettingsPicker(lgfx::LovyanGFX* g, int row) {
   g->fillScreen(COL_BG);
-  drawSettingsTitle(g, SETTINGS_ROW_LABELS[row]);
+  drawSettingsTitle(g, SETTINGS_ROW_LABELS[row], true);
 
   g->setTextSize(1);
   g->setTextColor(COL_TEXT2);
@@ -1236,46 +1294,488 @@ static void drawDigitalBlock(lgfx::LovyanGFX* g, int x0, int y0, int w, int h,
   g->print(mm);
 }
 
-// Outlined "X" icon button (same pressed-fill pattern as the gear).
-static void drawClockClose(lgfx::LovyanGFX* g) {
-  const int x = UI_CLOCK_CLOSE_BTN_X;
-  const int y = UI_CLOCK_CLOSE_BTN_Y;
-  const int w = UI_CLOCK_CLOSE_BTN_W;
-  const int h = UI_CLOCK_CLOSE_BTN_H;
-  bool pressed = pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
-                           UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1);
-  drawButtonChrome(g, x, y, w, h, 5, pressed);
-  // Two diagonals form the X; amber keeps it an interactive affordance.
-  const int ix0 = x + 8, iy0 = y + 6, ix1 = x + w - 9, iy1 = y + h - 7;
-  g->drawLine(ix0, iy0, ix1, iy1, COL_AMBER);
-  g->drawLine(ix1, iy0, ix0, iy1, COL_AMBER);
-  // Double-stroke for weight at 1 px (no AA).
-  g->drawLine(ix0 + 1, iy0, ix1 + 1, iy1, COL_AMBER);
-  g->drawLine(ix1 - 1, iy0, ix0 - 1, iy1, COL_AMBER);
-}
-
-void uiRenderClock(lgfx::LovyanGFX* g, uint8_t mode) {
+void uiRenderClock(lgfx::LovyanGFX* g, uint8_t mode, const UiFooterStatus& fs) {
   g->fillScreen(COL_BG);
 
   struct tm t;
   bool haveTime = getLocalTime(&t, 0);
   const struct tm* tp = haveTime ? &t : nullptr;
 
+  // All geometry below fits above CONTENT_BOTTOM, leaving room for the
+  // shared footer — no close control to leave room for otherwise.
   if (mode == UI_CLOCK_MODE_ANALOG) {
-    // Big face, vertically centered; leave a little top room for the X.
-    drawAnalogFace(g, SCREEN_W / 2, SCREEN_H / 2 + 4, 92, tp);
+    // Big face, vertically centered in the content area above the footer.
+    drawAnalogFace(g, SCREEN_W / 2, CONTENT_BOTTOM / 2, 78, tp);
   } else if (mode == UI_CLOCK_MODE_DIGITAL) {
-    drawDigitalBlock(g, 0, 0, SCREEN_W, SCREEN_H, tp, true);
+    drawDigitalBlock(g, 0, 0, SCREEN_W, CONTENT_BOTTOM, tp, true);
   } else {
     // Split: left half analog, right half 24h digital. Sized with margin so
-    // neither pane crowds the hairline or the screen edges.
+    // neither pane crowds the hairline or the content-area edges.
     const int mid = SCREEN_W / 2;
-    g->drawFastVLine(mid, 40, SCREEN_H - 56, COL_GRID);
-    drawAnalogFace(g, mid / 2, SCREEN_H / 2 + 4, 68, tp);
-    drawDigitalBlock(g, mid, 0, SCREEN_W - mid, SCREEN_H, tp, false);
+    g->drawFastVLine(mid, 40, CONTENT_BOTTOM - 56, COL_GRID);
+    drawAnalogFace(g, mid / 2, CONTENT_BOTTOM / 2, 68, tp);
+    drawDigitalBlock(g, mid, 0, SCREEN_W - mid, CONTENT_BOTTOM, tp, false);
   }
 
-  drawClockClose(g);
+  uiDrawFooter(g, fs);
+}
+
+// ── WEATHER ────────────────────────────────────────────────
+// Built only from COL_* tokens (TEXT/TEXT2/TEXT3/BLUE/AMBER/BORDER/GRID) so
+// night mode inherits for free, same as the clock page above. BLUE (the
+// palette's 16th and last slot) is spent solely on the rain glyph; snow/fog
+// stay in the neutral TEXT/TEXT2 grays — consistent with the rest of the UI
+// spending color only on market direction (GOOD/BAD), the BTC/interactive
+// accent (AMBER), and now rain (BLUE).
+
+// Hand-drawn glyphs mapped from OWM's condition-id ranges: 2xx thunderstorm,
+// 3xx-5xx drizzle/rain, 6xx snow, 800/801 clear, everything else (802-804
+// clouds, 741 fog, any unmapped code) a plain cloud. `r` is the icon's
+// overall half-height budget — glyph coordinates below are fractions of it
+// (native reference size r=9), matching cx,cy as the icon's visual center.
+// Storm/rain/snow are drawn standalone (no cloud underneath) — a cloud
+// sharing the space with a tiny overlay read as clutter at these sizes.
+static void drawWeatherIcon(lgfx::LovyanGFX* g, int cx, int cy, int r, uint16_t cond) {
+  float s = (float)r / 9.0f;
+
+  if (cond == 800 || cond == 801) {
+    // Clear: sun disc + 8 rays (cardinals then diagonals), with a gap
+    // between disc and rays so they read as separate. Plain drawLine, not
+    // drawWideLine — the latter's antialiased blend reads back the
+    // framebuffer, which this display's 4-bit palette sprite can't satisfy
+    // (LoadProhibited crash inside LovyanGFX's palette-blend path).
+    g->fillCircle(cx, cy, (int)(4 * s), COL_AMBER);
+    g->drawLine(cx, cy - 9 * s, cx, cy - 7 * s, COL_AMBER);
+    g->drawLine(cx, cy + 7 * s, cx, cy + 9 * s, COL_AMBER);
+    g->drawLine(cx - 9 * s, cy, cx - 7 * s, cy, COL_AMBER);
+    g->drawLine(cx + 7 * s, cy, cx + 9 * s, cy, COL_AMBER);
+    g->drawLine(cx - 7 * s, cy - 7 * s, cx - 5 * s, cy - 5 * s, COL_AMBER);
+    g->drawLine(cx + 5 * s, cy + 5 * s, cx + 7 * s, cy + 7 * s, COL_AMBER);
+    g->drawLine(cx - 7 * s, cy + 7 * s, cx - 5 * s, cy + 5 * s, COL_AMBER);
+    g->drawLine(cx + 5 * s, cy - 5 * s, cx + 7 * s, cy - 7 * s, COL_AMBER);
+    return;
+  }
+  if (cond >= 200 && cond <= 232) {
+    // Thunderstorm: zigzag bolt — a Material-style hexagon polygon (bottom
+    // tip, notch, top prong) split into 4 fillTriangle calls since the GFX
+    // API has no filled-polygon primitive.
+    g->fillTriangle(cx - 5 * s, cy + 2 * s, cx + 1 * s, cy - 8 * s, cx + 1 * s, cy - 2 * s,
+                     COL_AMBER);
+    g->fillTriangle(cx - 5 * s, cy + 2 * s, cx + 1 * s, cy - 2 * s, cx - 1 * s, cy + 2 * s,
+                     COL_AMBER);
+    g->fillTriangle(cx - 1 * s, cy + 2 * s, cx + 1 * s, cy - 2 * s, cx + 5 * s, cy - 2 * s,
+                     COL_AMBER);
+    g->fillTriangle(cx - 1 * s, cy + 2 * s, cx + 5 * s, cy - 2 * s, cx - 1 * s, cy + 8 * s,
+                     COL_AMBER);
+    return;
+  }
+  if (cond >= 600 && cond <= 622) {
+    // Snow: six-armed snowflake = three lines crossing at 60deg.
+    g->drawLine(cx, cy - 7 * s, cx, cy + 7 * s, COL_TEXT);
+    g->drawLine(cx - 6 * s, cy - 4 * s, cx + 6 * s, cy + 4 * s, COL_TEXT);
+    g->drawLine(cx - 6 * s, cy + 4 * s, cx + 6 * s, cy - 4 * s, COL_TEXT);
+    return;
+  }
+  if (cond >= 300 && cond <= 531) {
+    // Drizzle (3xx) / rain (5xx): three staggered teardrops (triangle cap
+    // fused onto a circle), two small on top, one large below.
+    g->fillTriangle(cx - 6 * s, cy - 8 * s, cx - 8 * s, cy - 3 * s, cx - 4 * s, cy - 3 * s,
+                     COL_BLUE);
+    g->fillCircle(cx - 6 * s, cy - 3 * s, (int)(2 * s), COL_BLUE);
+    g->fillTriangle(cx + 5 * s, cy - 6 * s, cx + 3 * s, cy - 1 * s, cx + 7 * s, cy - 1 * s,
+                     COL_BLUE);
+    g->fillCircle(cx + 5 * s, cy - 1 * s, (int)(2 * s), COL_BLUE);
+    g->fillTriangle(cx - 1 * s, cy + 1 * s, cx - 4 * s, cy + 6 * s, cx + 2 * s, cy + 6 * s,
+                     COL_BLUE);
+    g->fillCircle(cx - 1 * s, cy + 6 * s, (int)(3 * s), COL_BLUE);
+    return;
+  }
+  // Everything else (802-804 clouds, 741 fog, or any unmapped code) shares a
+  // plain cloud: two overlapping puffs on a fully-rounded pill base.
+  g->fillCircle(cx - 4 * s, cy - 2 * s, (int)(4 * s), COL_TEXT2);
+  g->fillCircle(cx + 3 * s, cy - 3 * s, (int)(5 * s), COL_TEXT2);
+  g->fillRoundRect(cx - 9 * s, cy - 2 * s, (int)(19 * s), (int)(9 * s), (int)(4 * s), COL_TEXT2);
+}
+
+// Shared by weatherTempWidth()/drawWeatherTemp() so the "--"-if-invalid
+// formatting only lives in one place.
+static void weatherFormatTemp(char* buf, size_t n, float tempC, bool valid) {
+  if (valid && !isnan(tempC)) snprintf(buf, n, "%.0f", tempC);
+  else snprintf(buf, n, "--");
+}
+
+// Draws a whole-degree temperature (or "--" if !valid) at text size `size`,
+// with a small hollow-circle degree mark instead of relying on the GLCD
+// font's extended-ASCII coverage. Returns the total pixel width drawn, so
+// callers needing right-alignment or centering can measure first via
+// weatherTempWidth() (same layout math, no draw).
+static int weatherTempWidth(lgfx::LovyanGFX* g, int size, float tempC, bool valid) {
+  g->setTextSize(size);
+  char buf[8];
+  weatherFormatTemp(buf, sizeof(buf), tempC, valid);
+  int r = size + 1;
+  return g->textWidth(buf) + r * 2 + 3;
+}
+
+static void drawWeatherTemp(lgfx::LovyanGFX* g, int x, int y, int size, float tempC,
+                            uint16_t color, bool valid) {
+  g->setTextSize(size);
+  g->setTextColor(color);
+  char buf[8];
+  weatherFormatTemp(buf, sizeof(buf), tempC, valid);
+  g->setCursor(x, y);
+  g->print(buf);
+  int r = size + 1;
+  g->drawCircle(x + g->textWidth(buf) + r + 1, y + r, r, color);
+}
+
+// Local wall-clock time at the weather location (OWM's tzOffset), not the
+// device's own configured TZ — gmtime() on the shifted epoch reads the
+// fields as if UTC, which is exactly the location's local time.
+static struct tm weatherLocalTime(uint32_t dt, int32_t tzOffset) {
+  time_t t = (time_t)dt + tzOffset;
+  struct tm out;
+  gmtime_r(&t, &out);
+  return out;
+}
+
+// iOS-widget-style forecast row bar: a full-width track with an orange
+// segment from `lo` to `hi`, scaled against the shared `weekLo`/`weekHi` so
+// every day's bar reads on one common scale (see drawRangeBar() above for
+// the sibling single-value version used by the dashboard).
+static void drawWeatherDayBar(lgfx::LovyanGFX* g, int x0, int x1, int y, float lo, float hi,
+                              float weekLo, float weekHi) {
+  g->drawFastHLine(x0, y, x1 - x0, COL_GRID);
+  float span = weekHi - weekLo;
+  if (span <= 0) return;
+  int bx0 = x0 + (int)((lo - weekLo) / span * (x1 - x0));
+  int bx1 = x0 + (int)((hi - weekLo) / span * (x1 - x0));
+  if (bx1 <= bx0) bx1 = bx0 + 1;
+  g->fillRoundRect(bx0, y - 2, bx1 - bx0, 4, 2, COL_AMBER);
+}
+
+static const char* const WEATHER_WDAY[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+
+void uiRenderWeather(lgfx::LovyanGFX* g, const WeatherData& wx, uint32_t okMs, const char* city,
+                     const UiFooterStatus& fs) {
+  g->fillScreen(COL_BG);
+
+  // ── current conditions (top) ──
+  drawCaps(g, EDGE, 4, city, COL_TEXT2);
+
+  char updBuf[24];
+  if (okMs == 0) {
+    snprintf(updBuf, sizeof(updBuf), "no data yet");
+  } else {
+    uint32_t minAgo = (millis() - okMs) / 60000UL;
+    snprintf(updBuf, sizeof(updBuf), "updated %lum ago", (unsigned long)minAgo);
+  }
+  drawCaps(g, CONTENT_RIGHT - capsWidth(updBuf), 4, updBuf, COL_TEXT3);
+
+  drawWeatherTemp(g, EDGE, 18, 4, wx.curTemp, COL_TEXT, wx.valid);
+
+  // Icon + condition text (size 2) on one row, today's H/L (size 3, numbers
+  // in COL_TEXT/white, "H:"/"L:" labels in COL_TEXT2/gray) on the row below.
+  // Rows are right-aligned to CONTENT_RIGHT when they fit; the condition
+  // row instead clamps to MIN_ROW_X and clips at CONTENT_RIGHT for the
+  // longest OWM-taxonomy strings (e.g. "thunderstorm with hail"), which
+  // even at size 2 can outrun the screen — better a clean cutoff than
+  // overlapping curTemp.
+  const int curIconR = 14;
+  const int row1Y = 13;                         // icon + condition row
+  const int curRowCy = row1Y + curIconR;        // icon vertical center
+  const int row2Y = row1Y + curIconR * 2 + 2;   // H/L row, just under the icon
+  const int MIN_ROW_X = 88;  // clears the size-4 curTemp digits + gap
+
+  g->setTextSize(2);
+  const char* desc = wx.valid ? wx.curDesc : "connecting";
+  int descW = g->textWidth(desc);
+
+  g->setTextSize(3);
+  int wLbl = g->textWidth("H:");
+  int hiW = weatherTempWidth(g, 3, wx.todayHi, wx.valid);
+  int loW = weatherTempWidth(g, 3, wx.todayLo, wx.valid);
+  int hlW = wLbl + hiW + 6 + wLbl + loW;
+
+  int row1W = curIconR * 2 + 6 + descW;
+  int rowX = CONTENT_RIGHT - row1W;
+  if (rowX < MIN_ROW_X) rowX = MIN_ROW_X;
+  int descTextY = curRowCy - 8;  // size-2 text is 16px tall
+
+  drawWeatherIcon(g, rowX + curIconR, curRowCy, curIconR, wx.valid ? wx.curCond : 800);
+
+  int descX = rowX + curIconR * 2 + 6;
+  g->setClipRect(descX, descTextY, CONTENT_RIGHT - descX, 16);
+  g->setTextSize(2);
+  g->setTextColor(COL_TEXT2);
+  g->setCursor(descX, descTextY);
+  g->print(desc);
+  g->clearClipRect();
+
+  // "H:34° L:26°" built from plain "H:"/"L:" labels plus drawWeatherTemp's
+  // hollow-circle degree marks (not a font glyph — see drawWeatherTemp).
+  int hlX = CONTENT_RIGHT - hlW;
+  g->setTextSize(3);
+  g->setTextColor(COL_TEXT2);
+  g->setCursor(hlX, row2Y);
+  g->print("H:");
+  drawWeatherTemp(g, hlX + wLbl, row2Y, 3, wx.todayHi, COL_TEXT, wx.valid);
+  g->setTextSize(3);
+  g->setTextColor(COL_TEXT2);
+  g->setCursor(hlX + wLbl + hiW + 6, row2Y);
+  g->print("L:");
+  drawWeatherTemp(g, hlX + wLbl + hiW + 6 + wLbl, row2Y, 3, wx.todayLo, COL_TEXT, wx.valid);
+
+  g->drawFastHLine(0, 68, CONTENT_RIGHT, COL_GRID);
+
+  // ── hourly strip (next WEATHER_NUM_HOURS hours) ──
+  int hourColW = SCREEN_W / WEATHER_NUM_HOURS;
+  for (int i = 0; i < WEATHER_NUM_HOURS; i++) {
+    int cx = i * hourColW + hourColW / 2;
+    char hbuf[4] = "--";
+    if (wx.valid) {
+      struct tm t = weatherLocalTime(wx.hours[i].dt, wx.tzOffset);
+      snprintf(hbuf, sizeof(hbuf), "%02d", t.tm_hour);
+    }
+    g->setTextSize(1);
+    g->setTextColor(COL_TEXT3);
+    g->setCursor(cx - g->textWidth(hbuf) / 2, 74);
+    g->print(hbuf);
+
+    drawWeatherIcon(g, cx, 92, 12, wx.valid ? wx.hours[i].cond : 800);
+
+    int tw = weatherTempWidth(g, 1, wx.hours[i].temp, wx.valid);
+    drawWeatherTemp(g, cx - tw / 2, 108, 1, wx.hours[i].temp, COL_TEXT, wx.valid);
+  }
+
+  g->drawFastHLine(0, 122, CONTENT_RIGHT, COL_GRID);
+
+  // ── 5-day forecast (rows, bottom) ──
+  float weekLo = 1e18f, weekHi = -1e18f;
+  if (wx.valid) {
+    for (int i = 0; i < WEATHER_NUM_DAYS; i++) {
+      if (wx.days[i].lo < weekLo) weekLo = wx.days[i].lo;
+      if (wx.days[i].hi > weekHi) weekHi = wx.days[i].hi;
+    }
+  }
+
+  const int dayTop = 126;
+  const int dayBottom = CONTENT_BOTTOM - 4;  // leaves room for the shared footer
+  const int rowH = (dayBottom - dayTop) / WEATHER_NUM_DAYS;
+  for (int i = 0; i < WEATHER_NUM_DAYS; i++) {
+    int rowY = dayTop + i * rowH;
+    int midY = rowY + rowH / 2;
+
+    const char* wday = "---";
+    if (wx.valid) {
+      struct tm t = weatherLocalTime(wx.days[i].dt, wx.tzOffset);
+      wday = WEATHER_WDAY[t.tm_wday];
+    }
+    drawCaps(g, EDGE, midY - 4, wday, COL_TEXT2);
+
+    drawWeatherIcon(g, EDGE + 44, midY, 7, wx.valid ? wx.days[i].cond : 800);
+
+    int loW = weatherTempWidth(g, 1, wx.days[i].lo, wx.valid);
+    int hiW = weatherTempWidth(g, 1, wx.days[i].hi, wx.valid);
+    int loX = EDGE + 64;
+    int hiX = CONTENT_RIGHT - hiW;
+    drawWeatherTemp(g, loX, midY - 4, 1, wx.days[i].lo, COL_TEXT3, wx.valid);
+    drawWeatherTemp(g, hiX, midY - 4, 1, wx.days[i].hi, COL_TEXT, wx.valid);
+
+    if (wx.valid) {
+      drawWeatherDayBar(g, loX + loW + 8, hiX - 8, midY, wx.days[i].lo, wx.days[i].hi, weekLo,
+                        weekHi);
+    } else {
+      g->drawFastHLine(loX + loW + 8, midY, (hiX - 8) - (loX + loW + 8), COL_GRID);
+    }
+  }
+
+  uiDrawFooter(g, fs);
+}
+
+// ── CALENDAR ───────────────────────────────────────────────
+// One view only: the current month off the device's synced clock, Sunday-
+// first, today highlighted. No prev/next navigation and no in-page
+// controls — there's no stored event data to browse to, so exit is the
+// shared footer's Home button, same as Dashboard/Weather.
+static const char* const CAL_MONTHS[12] = {
+  "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+  "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
+};
+static const char* const CAL_WDAY[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+
+static bool calIsLeapYear(int year) {
+  return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
+
+static int calDaysInMonth(int year, int mon /* 0-11 */) {
+  static const int days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  return (mon == 1 && calIsLeapYear(year)) ? 29 : days[mon];
+}
+
+static const int CAL_COLS = 7;
+static const int CAL_ROWS = 6;  // fixed, so the grid doesn't resize month to month
+static const int CAL_CELL_W = 44;
+static const int CAL_CELL_H = 27;
+static const int CAL_GRID_TOP = 46;
+static const int CAL_MARGIN_X = (SCREEN_W - CAL_COLS * CAL_CELL_W) / 2;
+
+void uiRenderCalendar(lgfx::LovyanGFX* g, const UiFooterStatus& fs) {
+  g->fillScreen(COL_BG);
+
+  struct tm t;
+  if (!getLocalTime(&t, 0)) {
+    drawCentered(g, CONTENT_BOTTOM / 2 - 4, "WAITING FOR TIME SYNC", COL_TEXT3, 1);
+    uiDrawFooter(g, fs);
+    return;
+  }
+
+  int year = t.tm_year + 1900;
+  int mon = t.tm_mon;  // 0-11
+
+  // Weekday of the 1st of this month (0 = Sun), via a noon mktime/localtime
+  // round-trip so it's clear of any DST-transition edge case.
+  struct tm first = {};
+  first.tm_year = t.tm_year;
+  first.tm_mon = mon;
+  first.tm_mday = 1;
+  first.tm_hour = 12;
+  time_t firstEpoch = mktime(&first);
+  struct tm firstNorm;
+  localtime_r(&firstEpoch, &firstNorm);
+  int firstWday = firstNorm.tm_wday;
+  int numDays = calDaysInMonth(year, mon);
+
+  char header[24];
+  snprintf(header, sizeof(header), "%s %d", CAL_MONTHS[mon], year);
+  drawCentered(g, 8, header, COL_TEXT, 2);
+
+  for (int c = 0; c < CAL_COLS; c++) {
+    int x = CAL_MARGIN_X + c * CAL_CELL_W;
+    drawCaps(g, x + (CAL_CELL_W - capsWidth(CAL_WDAY[c])) / 2, 34, CAL_WDAY[c], COL_TEXT3);
+  }
+  g->drawFastHLine(EDGE, 44, CONTENT_RIGHT - EDGE, COL_GRID);
+
+  // Table box + internal cell separators, fixed at CAL_ROWS so the grid's
+  // footprint doesn't shift month to month.
+  int gridW = CAL_COLS * CAL_CELL_W;
+  int gridH = CAL_ROWS * CAL_CELL_H;
+  g->drawRect(CAL_MARGIN_X, CAL_GRID_TOP, gridW, gridH, COL_GRID);
+  for (int c = 1; c < CAL_COLS; c++) {
+    g->drawFastVLine(CAL_MARGIN_X + c * CAL_CELL_W, CAL_GRID_TOP, gridH, COL_GRID);
+  }
+  for (int r = 1; r < CAL_ROWS; r++) {
+    g->drawFastHLine(CAL_MARGIN_X, CAL_GRID_TOP + r * CAL_CELL_H, gridW, COL_GRID);
+  }
+
+  for (int day = 1; day <= numDays; day++) {
+    int cellIdx = firstWday + (day - 1);
+    int col = cellIdx % CAL_COLS;
+    int row = cellIdx / CAL_COLS;
+    int x = CAL_MARGIN_X + col * CAL_CELL_W;
+    int y = CAL_GRID_TOP + row * CAL_CELL_H;
+    int cx = x + CAL_CELL_W / 2;
+    int cy = y + CAL_CELL_H / 2;
+
+    bool isToday = (day == t.tm_mday);
+    if (isToday) g->fillCircle(cx, cy, 12, COL_AMBER);
+
+    char buf[3];
+    snprintf(buf, sizeof(buf), "%d", day);
+    g->setTextSize(1);
+    g->setTextColor(isToday ? COL_BG : (col == 0 || col == 6 ? COL_TEXT3 : COL_TEXT));
+    g->setCursor(cx - g->textWidth(buf) / 2, cy - 4);
+    g->print(buf);
+  }
+
+  uiDrawFooter(g, fs);
+}
+
+// ── HOME (iPad-style app launcher) ─────────────────────────
+// 4x3 grid of square tiles, centered on screen; only the first
+// UI_HOME_APP_COUNT slots are populated (BTC TICKER, CLOCK, Settings, in
+// that row-major order) so future apps drop into the next free slot with
+// no layout change. Geometry lives in one place (homeTileRect) shared by
+// drawing and hit-testing (uiHomeTileAt) so they can't drift apart.
+static const int HOME_TILE = 70;
+static const int HOME_GUTTER = 6;
+static const int HOME_GRID_W = UI_HOME_COLS * HOME_TILE + (UI_HOME_COLS - 1) * HOME_GUTTER;
+static const int HOME_GRID_H = UI_HOME_ROWS * HOME_TILE + (UI_HOME_ROWS - 1) * HOME_GUTTER;
+static const int HOME_MARGIN_X = (SCREEN_W - HOME_GRID_W) / 2;
+static const int HOME_MARGIN_Y = (SCREEN_H - HOME_GRID_H) / 2;
+
+static void homeTileRect(int slot, int& x, int& y, int& w, int& h) {
+  int col = slot % UI_HOME_COLS;
+  int row = slot / UI_HOME_COLS;
+  x = HOME_MARGIN_X + col * (HOME_TILE + HOME_GUTTER);
+  y = HOME_MARGIN_Y + row * (HOME_TILE + HOME_GUTTER);
+  w = HOME_TILE;
+  h = HOME_TILE;
+}
+
+int uiHomeTileAt(int x, int y) {
+  for (int slot = 0; slot < UI_HOME_APP_COUNT; slot++) {
+    int tx, ty, tw, th;
+    homeTileRect(slot, tx, ty, tw, th);
+    if (x >= tx && x < tx + tw && y >= ty && y < ty + th) return slot;
+  }
+  return -1;  // empty slot or gutter/margin — no-op
+}
+
+// Slot order here, in uiRenderHome()'s icon dispatch below, and in
+// btc_ticker.ino's HOME_SLOT_PAGE must all agree — see the comment on
+// HOME_SLOT_PAGE there.
+static const char* const HOME_APP_LABELS[UI_HOME_APP_COUNT] = {
+  "BTC", "CLOCK", "SETTINGS", "WEATHER", "CALENDAR"
+};
+
+void uiRenderHome(lgfx::LovyanGFX* g, const UiFooterStatus& fs) {
+  g->fillScreen(COL_BG);
+
+  for (int slot = 0; slot < UI_HOME_APP_COUNT; slot++) {
+    int x, y, w, h;
+    homeTileRect(slot, x, y, w, h);
+    bool pressed = pressedIn(x, y, x + w, y + h);
+    g->fillRoundRect(x, y, w, h, 10, pressed ? COL_PANEL_HI : COL_PANEL);
+    g->drawRoundRect(x, y, w, h, 10, COL_BORDER);
+
+    int cx = x + w / 2;
+    int cy = y + h / 2 - 6;  // leave room for the caption below
+    if (slot == 0) {
+      // BTC TICKER: the same "B-in-circle" brand glyph as the boot splash.
+      g->drawCircle(cx, cy, 16, COL_AMBER);
+      g->setTextSize(2);
+      g->setTextColor(COL_AMBER);
+      g->setCursor(cx - g->textWidth("B") / 2, cy - 8);
+      g->print("B");
+    } else if (slot == 1) {
+      // CLOCK: a static analog face (fixed at 10:10, the classic clock-icon
+      // pose) — same component as the full-screen clock page, just at icon
+      // radius. Deliberately not live: it's an app icon, not a second clock,
+      // so it shouldn't tick every render.
+      struct tm iconTime = {};
+      iconTime.tm_hour = 10;
+      iconTime.tm_min = 10;
+      iconTime.tm_sec = 0;
+      drawAnalogFace(g, cx, cy, 18, &iconTime);
+    } else if (slot == 2) {
+      // Settings: the same gear glyph the old footer button used.
+      drawGear(g, cx, cy, COL_TEXT2);
+    } else if (slot == 3) {
+      // Weather: sun glyph regardless of live conditions — a fixed condition
+      // id here would go stale before the first fetch completes.
+      drawWeatherIcon(g, cx, cy, 16, 800);
+    } else {
+      // Calendar: wall-calendar glyph — rounded body, two hanger rings, and
+      // an amber "today" square, echoing the full-page grid's highlight.
+      drawCalendarIcon(g, cx, cy, 16);
+    }
+
+    const char* caption = HOME_APP_LABELS[slot];
+    drawCaps(g, x + (w - capsWidth(caption)) / 2, y + h - 14, caption, COL_TEXT2);
+  }
+
+  uiDrawFooter(g, fs);
 }
 
 // Touch feedback border, overlaid on top of the fully rendered page for one

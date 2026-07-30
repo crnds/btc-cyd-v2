@@ -18,17 +18,28 @@ What it does:
   them in a LittleFS flash "mini-database" (`/candles.bin`) that survives
   reboots and power loss; backfills from `/api/v3/klines` on boot and repairs
   gaps after reconnects.
-- Shows clock (NTP, timezone `ICT-7` / Asia/Bangkok), big price, candlestick
-  chart, and device stats; tap the status-bar clock for a full-screen ambient
-  clock (split analog+24h digital, or analog/digital only — cycle by tap;
-  "X" top-left returns); a touch-driven Settings page (gear icon,
-  bottom-right) configures brightness, 180° flip, price/candle intervals,
-  time range, chart style (Red/Green, Black/White, Line), and night mode
-  (red-only UI + 5% brightness 23:00-08:00, plus manual force-on); a
-  "Forget Wi-Fi network" row under a NETWORK section clears any stored
-  Wi-Fi credentials and puts the device into a SoftAP + captive-portal
-  setup mode ("Find Access Mode") so a phone can submit a new network
-  without a reflash.
+- Navigation is an iPad-style home screen (`Page::HOME`, the default landing
+  page): a 4-column x 3-row grid of square app tiles, populated left-to-right/
+  top-to-bottom with BTC TICKER, CLOCK, Settings, Weather (remaining slots
+  stay empty for future apps). Tapping a tile launches that app; holding
+  anywhere for 3s (`LONG_PRESS_MS`) jumps straight back to HOME the instant
+  the hold crosses the threshold (finger still down) — the *only* way out of
+  an app, by design (no in-app back/close controls). The last app you were
+  in (HOME, BTC TICKER, CLOCK, or Weather) is restored on the next boot.
+- BTC TICKER shows big price, candlestick chart, and device stats. CLOCK is a
+  full-screen ambient clock (split analog+24h digital, or analog/digital
+  only — cycle by whole-screen tap). Settings is a touch-driven list that
+  configures brightness, 180° flip, price/candle intervals, time range,
+  chart style (Red/Green, Black/White, Line), and night mode (red-only UI +
+  5% brightness 23:00-08:00, plus manual force-on); a "Forget Wi-Fi network"
+  row under a NETWORK section clears any stored Wi-Fi credentials and puts
+  the device into a SoftAP + captive-portal setup mode ("Find Access Mode")
+  so a phone can submit a new network without a reflash. Weather shows
+  current conditions + today's hi/lo (top), the next 6 hours (middle strip),
+  and a 5-day forecast as rows with an iOS-widget-style temperature range bar
+  (bottom), for a fixed location (`WEATHER_LAT`/`WEATHER_LON`/`WEATHER_CITY`
+  in `config.h` — no on-device location picker) via Open-Meteo's keyless
+  public forecast API, polled every 10 minutes.
 - 24/7 robustness: job scheduler with exponential backoff, WiFi supervisor
   (re-`begin()` after 60s down, `esp_restart()` after 10min), daily 4AM
   restart, heap logging every 60s.
@@ -93,6 +104,8 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 ├── net_http.h/.cpp        # one-shot HTTP/1.0 GET helper (unchunked)
 ├── net_price.h/.cpp       # persistent keep-alive TLS session for price polls
 ├── net_klines.h/.cpp      # streaming klines parser (no payload buffering)
+├── net_weather.h/.cpp     # one-shot Open-Meteo fetch (keyless),
+│                          #   ArduinoJson-filtered stream parse
 ├── settings.h/.cpp        # settings model, NVS persistence, option pickers
 ├── wifi_creds.h/.cpp      # NVS-backed Wi-Fi credentials (separate "wifi"
 │                          #   namespace), fallback to config.h when empty
@@ -120,10 +133,18 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
 - **Networking** (`net_*`): two deliberate strategies. Price polling keeps
   ONE persistent HTTP/1.1 keep-alive TLS session (a fresh handshake per 1Hz
   poll is too expensive); never call `useHTTP10()` there — it kills
-  keep-alive. One-shot fetches (klines) use `net_http`'s HTTP/1.0 helper so
-  the body is unchunked and can be stream-parsed. The klines parser is a
-  bracket-depth scanner that extracts fields off the TLS stream with zero
-  buffering (the payload is ~90KB at limit=288).
+  keep-alive. One-shot fetches (klines, weather) use `net_http`'s HTTP/1.0
+  helper so the body is unchunked and can be stream-parsed. The klines parser
+  is a bracket-depth scanner that extracts fields off the TLS stream with
+  zero buffering (the payload is ~90KB at limit=288). `net_weather.cpp`
+  fetches Open-Meteo's forecast API (keyless; fixed lat/lon from `config.h`,
+  no location picker) and stream-parses it with an ArduinoJson filter (keeps
+  only current/hourly/daily fields the UI draws) rather than buffering the
+  full payload; `jobWeather()` in the .ino calls `fetchPriceRelease()` first,
+  same as backfill, so only one TLS session is ever open. Open-Meteo reports
+  WMO weather codes, not OWM-style condition ids — `wmoToCond()` translates
+  them into the ranges `drawWeatherIcon()` (ui.cpp) switches on, keeping the
+  drawing code provider-agnostic.
 - **Heap discipline** (tight heap, important): only one TLS session at a
   time — each mbedTLS session holds ~45KB, so `fetchPriceRelease()` is
   called before a klines backfill (and after price polls when the interval
@@ -190,10 +211,12 @@ firmware/btc_ticker/       # the arduino-cli sketch (dir name == sketch name)
   `net_*` files use normal 2-space indentation. Match the file you're
   editing; don't reformat wholesale.
 - Settings page layout lives in `ui.h`/`ui.cpp` and is shared with touch
-  hit-testing (`btc_ticker.ino`) so it can't drift: title/gear/confirm
-  constants (`UI_SET_TITLE_H`, `UI_GEAR_HIT_*`, `UI_CONFIRM_*`) plus the
-  geometry helpers `uiSettingsItemAt()`, `uiSettingsMaxScroll()`, and
-  `uiPickerOptionAt()`. Never duplicate that math in the .ino.
+  hit-testing (`btc_ticker.ino`) so it can't drift: title/confirm constants
+  (`UI_SET_TITLE_H`, `UI_CONFIRM_*`) plus the geometry helpers
+  `uiSettingsItemAt()`, `uiSettingsMaxScroll()`, and `uiPickerOptionAt()`.
+  Never duplicate that math in the .ino. The HOME launcher's tile grid
+  follows the same pattern: `UI_HOME_*` constants in `ui.h` plus
+  `uiHomeTileAt()` shared between `uiRenderHome()` and tap-routing.
 - Hardware notes baked into the code: the XPT2046 touch controller is NOT on
   the display's SPI bus (dedicated pins, see `pins.h`); the touch calibration
   in the .ino intentionally swaps `y_min/y_max` to un-mirror screen X at
@@ -223,9 +246,10 @@ There is **no automated test suite**. Verification is:
 - `firmware/btc_ticker/config.h` contains WiFi credentials and is
   **gitignored — never commit it**. Only `config.example.h` (placeholders)
   is versioned.
-- All market data comes from Binance's **keyless public REST API** — no API
-  keys exist or should be added. (`plan.md` explicitly warns against copying
-  a hardcoded CMC API key from a reference project.)
+- All market data comes from Binance's **keyless public REST API**, and
+  weather from Open-Meteo's (also keyless) — no API keys exist or should be
+  added anywhere in this codebase. (`plan.md` explicitly warns against
+  copying a hardcoded CMC API key from a reference project.)
 - TLS certificate verification is disabled (`tls.setInsecure()`) in both
   `net_http.cpp` and `net_price.cpp` — a deliberate v1 tradeoff for a
   read-only price ticker; flagged in code comments if that ever changes.

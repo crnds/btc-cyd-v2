@@ -1021,6 +1021,7 @@
     const COL_TEXT3    = "#73828C";
     const COL_GRID     = "#181D21";
     const COL_AMBER_DIM = "#5A3D10";
+    const COL_BLUE      = "#52C2F7";
 
     // Settings constants & helpers (mirrors settings.cpp / ui.cpp)
     const SETTINGS_ROW_LABELS = [
@@ -1050,8 +1051,8 @@
     const BRI_LABEL = ["1%", "5%", "25%", "50%", "75%", "100%", "Auto"];
     const PRICE_IV_LABEL = ["1s", "5s", "10s", "1m", "5m"];
     const PRICE_IV_MS = [1000, 5000, 10000, 60000, 300000];
-    const CANDLE_IV_LABEL = ["5m", "15m", "1h", "4h"];
-    const CANDLE_IV_SEC = [300, 900, 3600, 14400];
+    const CANDLE_IV_LABEL = ["5m", "15m", "30m", "1h", "4h"];
+    const CANDLE_IV_SEC = [300, 900, 1800, 3600, 14400];
     const RANGE_LABEL = ["12h", "24h", "7D"];
     const RANGE_SEC = [12 * 3600, 24 * 3600, 7 * 24 * 3600];
     const STYLE_LABEL = ["Red/Green", "Black/White", "Line"];
@@ -1067,45 +1068,41 @@
     // (2 options) toggle in place; wider rows open the picker. ROW_FORGET_AP
     // is an action row — it skips the picker entirely (see settingsItemAt
     // tap handling below).
+    //
+    // Grouped by scope, not data domain: GLOBAL is device-wide (applies no
+    // matter which app is on screen); BTC TICKER is everything that only
+    // affects that app, including its own status-bar Clock/Date toggles
+    // (those hide/show elements of the *ticker's* status bar, not the
+    // full-screen CLOCK app, which has no settings yet).
     const SET_ITEMS = [
-      { header: "MARKET DATA" },
+      { header: "GLOBAL" },
+      { row: ROW_BRIGHTNESS },
+      { row: ROW_FLIP },
+      { row: ROW_NIGHT },
+      { row: ROW_NIGHT_FORCE },
+      { row: ROW_FORGET_AP },
+      { header: "BTC TICKER" },
       { row: ROW_PRICE_IV },
       { row: ROW_CANDLE_IV },
       { row: ROW_RANGE },
-      { header: "CHART" },
       { row: ROW_STYLE },
       { row: ROW_SHOW_PRICE },
       { row: ROW_RANGEBAR },
-      { header: "DISPLAY" },
-      { row: ROW_BRIGHTNESS },
-      { row: ROW_FLIP },
       { row: ROW_SHOW_CLOCK },
       { row: ROW_SHOW_DATE },
-      { row: ROW_NIGHT },
-      { row: ROW_NIGHT_FORCE },
-      { header: "NETWORK" },
-      { row: ROW_FORGET_AP },
     ];
     const SET_HDR_H = 26;
     const SET_ROW_H = 40;
 
     const UI_SET_TITLE_H = 30;
     const UI_BACK_HIT_X1 = 90;
-    const UI_GEAR_HIT_X0 = 230;
-    const UI_GEAR_HIT_Y0 = 200;
-    // Dashboard status-bar clock → full-screen clock (mirrors ui.h)
-    const UI_CLOCK_HIT_X0 = 95;
-    const UI_CLOCK_HIT_X1 = 225;
-    const UI_CLOCK_HIT_Y0 = 0;
-    const UI_CLOCK_HIT_Y1 = 28;
-    const UI_CLOCK_CLOSE_HIT_X0 = 0;
-    const UI_CLOCK_CLOSE_HIT_X1 = 44;
-    const UI_CLOCK_CLOSE_HIT_Y0 = 0;
-    const UI_CLOCK_CLOSE_HIT_Y1 = 36;
-    const UI_CLOCK_CLOSE_BTN_X  = 4;
-    const UI_CLOCK_CLOSE_BTN_Y  = 4;
-    const UI_CLOCK_CLOSE_BTN_W  = 28;
-    const UI_CLOCK_CLOSE_BTN_H  = 24;
+    // HOME grid geometry (mirrors ui.h UI_HOME_*): 4x3 tiles, only the
+    // first UI_HOME_APP_COUNT slots populated (BTC TICKER, CLOCK, Settings,
+    // Weather, Calendar).
+    const UI_HOME_COLS = 4;
+    const UI_HOME_ROWS = 3;
+    const UI_HOME_SLOT_COUNT = UI_HOME_COLS * UI_HOME_ROWS;
+    const UI_HOME_APP_COUNT = 5;
     const UI_CLOCK_MODE_SPLIT   = 0;
     const UI_CLOCK_MODE_ANALOG  = 1;
     const UI_CLOCK_MODE_DIGITAL = 2;
@@ -1176,11 +1173,13 @@
 
     function settingsMaxScroll() {
       const total = setItemTop(SET_ITEMS.length) - UI_SET_TITLE_H;
-      return Math.max(0, total - (240 - UI_SET_TITLE_H));
+      // Leaves room for the shared footer (CONTENT_BOTTOM, not full screen).
+      return Math.max(0, total - (CONTENT_BOTTOM - UI_SET_TITLE_H));
     }
 
     function settingsItemAt(scrollPx, ty) {
-      if (ty < UI_SET_TITLE_H) return -1;
+      // Below CONTENT_BOTTOM is the shared footer's Home button, not a row.
+      if (ty < UI_SET_TITLE_H || ty >= CONTENT_BOTTOM) return -1;
       for (let i = 0; i < SET_ITEMS.length; i++) {
         const h = SET_ITEMS[i].header ? SET_HDR_H : SET_ROW_H;
         const y = setItemTop(i) - scrollPx;
@@ -1207,6 +1206,131 @@
     const PAD_RIGHT     = 0;
     const CONTENT_RIGHT = SCREEN_W - PAD_RIGHT;  // 320
     const EDGE          = 4;
+
+    // Every full-screen page (dashboard, Clock, Weather, HOME, and the
+    // top-level Settings list) reserves this much space at the bottom for
+    // the shared footer (drawFooter()) — its hairline sits right at this y.
+    // Page content must stay above it.
+    const CONTENT_BOTTOM = 212;
+
+    // Footer Home button hit box, mirrors ui.h's UI_FOOTER_HOME_* — shared
+    // between drawing (drawFooter) and hit-testing (handleTap) so they can't
+    // drift apart. Tapping here jumps straight to HOME — the only way out of
+    // an app now that long-press-to-home is gone. Sized generously (most of
+    // the 28px footer band, well clear of the CPU/RAM/ROM stats to its left)
+    // since resistive touch rewards a big, easy-to-land target over a tight one.
+    const UI_FOOTER_HOME_W  = 64;
+    const UI_FOOTER_HOME_H  = 26;
+    const UI_FOOTER_HOME_X1 = 316;  // CONTENT_RIGHT - EDGE
+    const UI_FOOTER_HOME_X0 = UI_FOOTER_HOME_X1 - UI_FOOTER_HOME_W;
+    const UI_FOOTER_HOME_Y0 = 213;  // just below the footer hairline (212)
+    const UI_FOOTER_HOME_Y1 = UI_FOOTER_HOME_Y0 + UI_FOOTER_HOME_H;
+
+    // HOME grid geometry (mirrors ui.cpp's homeTileRect): square tiles
+    // centered on screen, shared by drawing (renderHome) and hit-testing
+    // (homeTileAt) so they can't drift apart.
+    const HOME_TILE = 70;
+    const HOME_GUTTER = 6;
+    const HOME_GRID_W = UI_HOME_COLS * HOME_TILE + (UI_HOME_COLS - 1) * HOME_GUTTER;
+    const HOME_GRID_H = UI_HOME_ROWS * HOME_TILE + (UI_HOME_ROWS - 1) * HOME_GUTTER;
+    const HOME_MARGIN_X = Math.floor((SCREEN_W - HOME_GRID_W) / 2);
+    const HOME_MARGIN_Y = Math.floor((SCREEN_H - HOME_GRID_H) / 2);
+
+    function homeTileRect(slot) {
+      const col = slot % UI_HOME_COLS;
+      const row = Math.floor(slot / UI_HOME_COLS);
+      return {
+        x: HOME_MARGIN_X + col * (HOME_TILE + HOME_GUTTER),
+        y: HOME_MARGIN_Y + row * (HOME_TILE + HOME_GUTTER),
+        w: HOME_TILE,
+        h: HOME_TILE
+      };
+    }
+
+    function homeTileAt(x, y) {
+      for (let slot = 0; slot < UI_HOME_APP_COUNT; slot++) {
+        const r = homeTileRect(slot);
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return slot;
+      }
+      return -1;  // empty slot or gutter/margin — no-op
+    }
+
+    const HOME_APP_LABELS = ["BTC", "CLOCK", "SETTINGS", "WEATHER", "CALENDAR"];
+
+    // Mirrors firmware's HOME_SLOT_PAGE: the single source of truth for the
+    // HOME tile grid's slot->app mapping, must stay in the same order as
+    // HOME_APP_LABELS above and the icon dispatch in renderHome().
+    const HOME_SLOT_PAGE = ["dashboard", "clock", "settings", "weather", "calendar"];
+
+    // Mirrors firmware's RESTORABLE_PAGES: the only pages saveLastPage()
+    // persists / the boot restore falls back from. Settings/wifi_setup are
+    // intentionally absent.
+    const RESTORABLE_PAGES = ["dashboard", "clock", "home", "weather", "calendar"];
+
+    // Calendar page geometry/labels (mirrors ui.cpp's CAL_* constants).
+    const CAL_MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+                        "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+    const CAL_WDAY = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+    const CAL_COLS = 7;
+    const CAL_ROWS = 6;  // fixed, so the grid doesn't resize month to month
+    const CAL_CELL_W = 44;
+    const CAL_CELL_H = 27;
+    const CAL_GRID_TOP = 46;
+    const CAL_MARGIN_X = Math.floor((SCREEN_W - CAL_COLS * CAL_CELL_W) / 2);
+
+    // Weather app: fixed location (mirrors config.h's WEATHER_LAT/LON/CITY —
+    // no on-device picker), fetched live from Open-Meteo's keyless public
+    // API (see fetchWeather() below) — same as every other data source in
+    // this simulator, no key to paste in.
+    const WEATHER_LAT = 13.7563;
+    const WEATHER_LON = 100.5018;
+    const WEATHER_CITY = "Bangkok";
+    const WEATHER_NUM_HOURS = 6;
+    const WEATHER_NUM_DAYS = 5;
+
+    // Mirrors wmoToCond()/wmoDescription() in net_weather.cpp: Open-Meteo
+    // reports WMO weather codes, not OWM-style condition ids — translate
+    // into the ranges drawWeatherIcon() switches on, and supply the missing
+    // description text (Open-Meteo has no description field).
+    function wmoToCond(code) {
+      switch (code) {
+        case 0: return 800;
+        case 1: return 801;
+        case 2: return 802;
+        case 3: return 804;
+        case 45: case 48: return 741;
+        case 51: case 53: case 55:
+        case 56: case 57: return 300;
+        case 61: case 63: case 65:
+        case 66: case 67:
+        case 80: case 81: case 82: return 500;
+        case 71: case 73: case 75: case 77:
+        case 85: case 86: return 600;
+        case 95: case 96: case 99: return 200;
+        default: return 800;
+      }
+    }
+
+    function wmoDescription(code) {
+      switch (code) {
+        case 0: return "clear sky";
+        case 1: return "mainly clear";
+        case 2: return "partly cloudy";
+        case 3: return "overcast";
+        case 45: case 48: return "fog";
+        case 51: case 53: case 55: return "drizzle";
+        case 56: case 57: return "freezing drizzle";
+        case 61: case 63: case 65: return "rain";
+        case 66: case 67: return "freezing rain";
+        case 71: case 73: case 75: case 77: return "snow";
+        case 80: case 81: case 82: return "rain showers";
+        case 85: case 86: return "snow showers";
+        case 95: return "thunderstorm";
+        case 96: case 99: return "thunderstorm with hail";
+        default: return "unknown";
+      }
+    }
+
     // Chart footprint: bottom fixed at AXIS_Y; top grows into price / range-bar
     // strips when those settings are off (mirrors ui.cpp chartY0/chartH).
     const CHART_W        = 288;
@@ -1437,6 +1561,94 @@
         this.fillCircle(cx, cy, 2, COL_BG);
       }
 
+      // Mirrors drawHomeIcon() in ui.cpp: pitched-roof house glyph for the
+      // footer Home button, in the same hand-drawn-glyph family as
+      // drawGear()/drawWifi(). `r` is the roof's half-width/height budget.
+      drawHomeIcon(cx, cy, r, col) {
+        this.fillTriangle(cx - r, cy, cx, cy - r, cx + r, cy, col);
+        const bodyW = r * 2 - 2;
+        const bodyH = r;
+        this.fillRect(cx - Math.floor(bodyW / 2), cy, bodyW, bodyH, col);
+        this.fillRect(cx - 1, cy + bodyH - (Math.floor(r / 2) + 1), 3, Math.floor(r / 2) + 1, COL_BG);
+      }
+
+      // Mirrors drawCalendarIcon() in ui.cpp: wall-calendar glyph (rounded
+      // body, two hanger-ring tabs, amber "today" square) for the HOME tile.
+      // `r` is the body's half-width/height budget.
+      drawCalendarIcon(cx, cy, r) {
+        const w = r * 2 - 2, h = r * 2 - 4;
+        const x0 = cx - Math.floor(w / 2), y0 = cy - Math.floor(h / 2);
+        this.drawRoundRect(x0, y0, w, h, 3, COL_TEXT2);
+        this.drawFastHLine(x0, y0 + 5, w, COL_TEXT2);
+        this.fillRect(x0 + 3, y0 - 3, 2, 5, COL_TEXT2);
+        this.fillRect(x0 + w - 5, y0 - 3, 2, 5, COL_TEXT2);
+        this.fillRect(cx - 3, y0 + h - 8, 6, 5, COL_AMBER);
+      }
+
+      // Mirrors drawWeatherIcon() in ui.cpp: OWM condition-id ranges (2xx
+      // storm, 3xx-5xx rain, 6xx snow, 800/801 clear, everything else (802-804
+      // clouds, 741 fog, any unmapped code) a plain cloud. `r` is the icon's
+      // overall half-height budget — glyph coordinates below are fractions of
+      // it (native reference size r=9). Storm/rain/snow are drawn standalone
+      // (no cloud underneath) — a cloud sharing the space with a tiny overlay
+      // read as clutter at these sizes. COL_BLUE (the palette's 16th and
+      // last slot) is spent solely on the rain glyph; everything else stays
+      // in the neutral TEXT/TEXT2 grays or the AMBER accent. Plain drawLine,
+      // not a thicker/rounded stroke — ui.cpp can't use LovyanGFX's
+      // drawWideLine here (its antialiased blend crashes against this
+      // display's 4-bit palette sprite), so the simulator matches that
+      // constraint pixel-for-pixel.
+      drawWeatherIcon(cx, cy, r, cond) {
+        const s = r / 9;
+        if (cond === 800 || cond === 801) {
+          // Clear: sun disc + 8 rays (cardinals then diagonals), with a gap
+          // between disc and rays so they read as separate.
+          this.fillCircle(cx, cy, 4 * s, COL_AMBER);
+          this.drawLine(cx, cy - 9 * s, cx, cy - 7 * s, COL_AMBER);
+          this.drawLine(cx, cy + 7 * s, cx, cy + 9 * s, COL_AMBER);
+          this.drawLine(cx - 9 * s, cy, cx - 7 * s, cy, COL_AMBER);
+          this.drawLine(cx + 7 * s, cy, cx + 9 * s, cy, COL_AMBER);
+          this.drawLine(cx - 7 * s, cy - 7 * s, cx - 5 * s, cy - 5 * s, COL_AMBER);
+          this.drawLine(cx + 5 * s, cy + 5 * s, cx + 7 * s, cy + 7 * s, COL_AMBER);
+          this.drawLine(cx - 7 * s, cy + 7 * s, cx - 5 * s, cy + 5 * s, COL_AMBER);
+          this.drawLine(cx + 5 * s, cy - 5 * s, cx + 7 * s, cy - 7 * s, COL_AMBER);
+          return;
+        }
+        if (cond >= 200 && cond <= 232) {
+          // Thunderstorm: zigzag bolt — a Material-style hexagon polygon
+          // (bottom tip, notch, top prong) split into 4 filled triangles
+          // since canvas has no filled-polygon primitive here.
+          this.fillTriangle(cx - 5*s, cy + 2*s, cx + 1*s, cy - 8*s, cx + 1*s, cy - 2*s, COL_AMBER);
+          this.fillTriangle(cx - 5*s, cy + 2*s, cx + 1*s, cy - 2*s, cx - 1*s, cy + 2*s, COL_AMBER);
+          this.fillTriangle(cx - 1*s, cy + 2*s, cx + 1*s, cy - 2*s, cx + 5*s, cy - 2*s, COL_AMBER);
+          this.fillTriangle(cx - 1*s, cy + 2*s, cx + 5*s, cy - 2*s, cx - 1*s, cy + 8*s, COL_AMBER);
+          return;
+        }
+        if (cond >= 600 && cond <= 622) {
+          // Snow: six-armed snowflake = three lines crossing at 60deg.
+          this.drawLine(cx, cy - 7 * s, cx, cy + 7 * s, COL_TEXT);
+          this.drawLine(cx - 6 * s, cy - 4 * s, cx + 6 * s, cy + 4 * s, COL_TEXT);
+          this.drawLine(cx - 6 * s, cy + 4 * s, cx + 6 * s, cy - 4 * s, COL_TEXT);
+          return;
+        }
+        if (cond >= 300 && cond <= 531) {
+          // Drizzle (3xx) / rain (5xx): three staggered teardrops (triangle
+          // cap fused onto a circle), two small on top, one large below.
+          this.fillTriangle(cx - 6*s, cy - 8*s, cx - 8*s, cy - 3*s, cx - 4*s, cy - 3*s, COL_BLUE);
+          this.fillCircle(cx - 6 * s, cy - 3 * s, 2 * s, COL_BLUE);
+          this.fillTriangle(cx + 5*s, cy - 6*s, cx + 3*s, cy - 1*s, cx + 7*s, cy - 1*s, COL_BLUE);
+          this.fillCircle(cx + 5 * s, cy - 1 * s, 2 * s, COL_BLUE);
+          this.fillTriangle(cx - 1*s, cy + 1*s, cx - 4*s, cy + 6*s, cx + 2*s, cy + 6*s, COL_BLUE);
+          this.fillCircle(cx - 1 * s, cy + 6 * s, 3 * s, COL_BLUE);
+          return;
+        }
+        // Everything else (802-804 clouds, 741 fog, or any unmapped code)
+        // shares a plain cloud: two overlapping puffs on a rounded pill base.
+        this.fillCircle(cx - 4 * s, cy - 2 * s, 4 * s, COL_TEXT2);
+        this.fillCircle(cx + 3 * s, cy - 3 * s, 5 * s, COL_TEXT2);
+        this.fillRoundRect(cx - 9 * s, cy - 2 * s, 19 * s, 9 * s, 4 * s, COL_TEXT2);
+      }
+
       setTextSize(size) {
         this.textSize = size;
       }
@@ -1514,6 +1726,51 @@
       for (let i = 0; i < 3; i++) {
         g.fillCircle(startX + i * spacing, cy, 3, i === phase ? COL_AMBER : COL_BORDER);
       }
+    }
+
+    // Mirrors weatherFormatTemp()/weatherTempWidth()/drawWeatherTemp() in
+    // ui.cpp: a whole-degree temperature (or "--" if !valid) with a small
+    // hollow-circle degree mark instead of relying on a font glyph.
+    function weatherFormatTemp(tempC, valid) {
+      return (valid && !isNaN(tempC)) ? Math.round(tempC).toString() : "--";
+    }
+
+    function weatherTempWidth(g, size, tempC, valid) {
+      g.setTextSize(size);
+      const buf = weatherFormatTemp(tempC, valid);
+      const r = size + 1;
+      return g.textWidth(buf) + r * 2 + 3;
+    }
+
+    function drawWeatherTemp(g, x, y, size, tempC, color, valid) {
+      g.setTextSize(size);
+      g.setTextColor(color);
+      const buf = weatherFormatTemp(tempC, valid);
+      g.setCursor(x, y);
+      g.print(buf);
+      const r = size + 1;
+      g.drawCircle(x + g.textWidth(buf) + r + 1, y + r, r, color);
+    }
+
+    // Mirrors weatherLocalTime() in ui.cpp: wall-clock time at the weather
+    // location (OWM's tzOffset), not the browser's own timezone.
+    function weatherLocalTime(dtSec, tzOffsetSec) {
+      return new Date((dtSec + tzOffsetSec) * 1000);
+    }
+
+    const WEATHER_WDAY = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+    // Mirrors drawWeatherDayBar() in ui.cpp: iOS-widget-style forecast row
+    // bar, an orange segment from `lo` to `hi` scaled against the shared
+    // weekLo/weekHi so every day's bar reads on one common scale.
+    function drawWeatherDayBar(g, x0, x1, y, lo, hi, weekLo, weekHi) {
+      g.drawFastHLine(x0, y, x1 - x0, COL_GRID);
+      const span = weekHi - weekLo;
+      if (span <= 0) return;
+      let bx0 = x0 + Math.floor((lo - weekLo) / span * (x1 - x0));
+      let bx1 = x0 + Math.floor((hi - weekLo) / span * (x1 - x0));
+      if (bx1 <= bx0) bx1 = bx0 + 1;
+      g.fillRoundRect(bx0, y - 2, bx1 - bx0, 4, 2, COL_AMBER);
     }
 
     // ── KEYLESS LIVE DATA PROVIDERS ──────────────────────────
@@ -1615,10 +1872,10 @@
       coinbase: {
         id: "coinbase", name: "Coinbase", kind: "live", quote: "USD",
         _intervalSec(intervalLabel) {
-          return ({ "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 })[intervalLabel] || 300;
+          return ({ "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400 })[intervalLabel] || 300;
         },
         _exchangeGranularity(intervalLabel) {
-          return ({ "5m": 300, "15m": 900, "1h": 3600, "4h": 3600 })[intervalLabel] || 300;
+          return ({ "5m": 300, "15m": 900, "30m": 900, "1h": 3600, "4h": 3600 })[intervalLabel] || 300;
         },
         _historicPeriod(intervalLabel, limit) {
           const need = this._intervalSec(intervalLabel) * limit;
@@ -1787,7 +2044,7 @@
       bitstamp: {
         id: "bitstamp", name: "Bitstamp", kind: "live", quote: "USD",
         _step(intervalLabel) {
-          const map = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 };
+          const map = { "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400 };
           return map[intervalLabel] || 300;
         },
         async fetchTicker() {
@@ -1836,7 +2093,7 @@
           };
         },
         async fetchKlines(intervalLabel, limit) {
-          const sec = ({ "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 })[intervalLabel] || 300;
+          const sec = ({ "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400 })[intervalLabel] || 300;
           // days arg: 1 → ~30m bars, 7/14 → ~4h bars. Pick the smallest window
           // that can cover limit * interval (capped so we stay on free tier).
           const needSec = limit * sec;
@@ -1894,8 +2151,12 @@
         this.priceOkMs = 0; // Simulated millis() timestamp of last price fetch success
         this.lastLiveFetchTime = 0;
 
+        // Weather State (mirrors gWeather/weatherOkMs in btc_ticker.ino)
+        this.gWeather = { valid: false };
+        this.weatherOkMs = 0;
+
         // Settings State
-        this.currentPage = "dashboard"; // "dashboard", "settings", "settings_picker", "clock", "wifi_setup"
+        this.currentPage = "home"; // "home", "dashboard", "settings", "settings_picker", "clock", "wifi_setup"
         this.settingsScroll = 0;
         this.pickerRow = -1;
         this.confirmIdx = -1;   // >=0 = confirmation page, pending option idx
@@ -1938,6 +2199,7 @@
         this.jobs = [
           { name: "price", interval: 1000, next: 0, backoff: 1000, run: () => this.jobPrice() },
           { name: "ntp", interval: 6 * 3600 * 1000, next: 0, backoff: 1000, run: () => this.jobNtp() },
+          { name: "weather", interval: 10 * 60 * 1000, next: 0, backoff: 1000, run: () => this.jobWeather() },
         ];
 
         // Backfill scheduling
@@ -2024,6 +2286,8 @@
         this.dayHigh = NaN;
         this.dayLow = NaN;
         this.priceOkMs = 0;
+        this.gWeather = { valid: false };
+        this.weatherOkMs = 0;
         this.backfillDoneOnce = false;
         this.backfillNextMs = 0;
         this.backfillBackoff = 1000;
@@ -2031,13 +2295,14 @@
         this.wifiDownSinceMs = 0;
         this.wifiLastRetryMs = 0;
 
-        // Restore whichever restorable page (dashboard or full-screen clock,
-        // plus clock face) was current before the reset — mirrors the
-        // firmware's saveLastPage()/setup() restore. Settings/Wi-Fi-setup
-        // are never saved as "last page", so a reset mid-settings always
-        // falls back to the dashboard.
+        // Restore whichever restorable page (HOME, dashboard, full-screen
+        // clock, or weather, plus clock face) was current before the reset —
+        // mirrors the firmware's saveLastPage()/setup() restore. Settings/
+        // Wi-Fi-setup are never saved as "last page", so a reset mid-settings
+        // always falls back to HOME. No saved value (fresh device) also
+        // lands on HOME.
         const lastPage = localStorage.getItem("btc_cyd_lastPage");
-        this.currentPage = (lastPage === "clock") ? "clock" : "dashboard";
+        this.currentPage = RESTORABLE_PAGES.includes(lastPage) ? lastPage : "home";
         const savedClockMode = parseInt(localStorage.getItem("btc_cyd_clockMode"), 10);
         this.clockMode = (savedClockMode >= 0 && savedClockMode < UI_CLOCK_MODE_COUNT) ? savedClockMode : UI_CLOCK_MODE_SPLIT;
         this.settingsScroll = 0;
@@ -2179,7 +2444,7 @@
             this.gSettings.rangeIdx = 1; // 24h
             mask |= 1 << ROW_RANGE;
           } else {
-            this.gSettings.candleIvIdx = 2; // 1h
+            this.gSettings.candleIvIdx = 3; // 5m/15m/30m -> 1h
             mask |= 1 << ROW_CANDLE_IV;
           }
         }
@@ -2262,15 +2527,17 @@
       handleTouchUp(tx, ty) {
         this.touchIsDown = false;
         this.render();  // release edge: clear the feedback border immediately
+        // release: a tap unless it turned into a drag
         if (!this.dragging) {
           this.handleTap(this.pressX, this.pressY);
         }
       }
 
-      // Mirrors firmware's saveLastPage(): only dashboard/clock are
-      // restorable, so wifi_setup/settings transitions never call this.
+      // Mirrors firmware's saveLastPage()/RESTORABLE_PAGES: only pages in
+      // RESTORABLE_PAGES persist, so wifi_setup/settings transitions never
+      // call this.
       saveLastPage() {
-        if (this.currentPage !== "dashboard" && this.currentPage !== "clock") return;
+        if (!RESTORABLE_PAGES.includes(this.currentPage)) return;
         localStorage.setItem("btc_cyd_lastPage", this.currentPage);
         localStorage.setItem("btc_cyd_clockMode", String(this.clockMode));
       }
@@ -2291,37 +2558,60 @@
           return;
         }
 
-        if (this.currentPage === "clock") {
-          // Close "X" top-left — same hit zone as firmware ui.h
-          if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
-              ty >= UI_CLOCK_CLOSE_HIT_Y0 && ty < UI_CLOCK_CLOSE_HIT_Y1) {
-            this.currentPage = "dashboard";
+        // Universal footer Home button (mirrors UI_FOOTER_HOME_* / handleTap
+        // in btc_ticker.ino): every page that draws the shared footer jumps
+        // to "home" here, ahead of each page's own tap handling below so
+        // e.g. the clock's whole-screen tap-to-cycle doesn't also fire.
+        // Excludes the Settings picker/confirm sub-views, which don't draw
+        // the footer and reuse that screen band for their own rows/buttons.
+        const onFooterPage = this.currentPage === "dashboard" || this.currentPage === "clock" ||
+                             this.currentPage === "weather" || this.currentPage === "home" ||
+                             this.currentPage === "calendar" ||
+                             (this.currentPage === "settings" && this.pickerRow < 0 && this.confirmIdx < 0);
+        if (onFooterPage && tx >= UI_FOOTER_HOME_X0 && tx < UI_FOOTER_HOME_X1 &&
+            ty >= UI_FOOTER_HOME_Y0 && ty < UI_FOOTER_HOME_Y1) {
+          if (this.currentPage !== "home") {
+            this.pickerRow = -1;
+            this.confirmIdx = -1;
+            this.currentPage = "home";
             this.saveLastPage();
             this.render();
-            return;
           }
-          // Whole-screen tap cycles split → analog → digital → split
+          return;
+        }
+
+        if (this.currentPage === "home") {
+          // Tile grid: tap routes to the corresponding app. Leaving an app
+          // is via the footer Home button above — no in-app back
+          // affordance. HOME_SLOT_PAGE is the single source of truth for
+          // slot order (mirrors btc_ticker.ino's HOME_SLOT_PAGE).
+          const slot = homeTileAt(tx, ty);
+          if (slot >= 0 && slot < UI_HOME_APP_COUNT) {
+            this.currentPage = HOME_SLOT_PAGE[slot];
+            if (this.currentPage === "settings") {
+              this.settingsScroll = 0;
+              this.pickerRow = -1;
+              this.confirmIdx = -1;
+            } else {
+              this.saveLastPage();
+            }
+            this.render();
+          }
+          return;
+        }
+
+        if (this.currentPage === "clock") {
+          // Whole-screen tap (outside the footer Home button above) cycles
+          // split → analog → digital → split.
           this.clockMode = (this.clockMode + 1) % UI_CLOCK_MODE_COUNT;
           this.saveLastPage();
           this.render();
           return;
         }
 
-        if (this.currentPage === "dashboard") {
-          // Gear hit bounds: bottom-right corner
-          if (tx >= UI_GEAR_HIT_X0 && ty >= UI_GEAR_HIT_Y0) {
-            this.currentPage = "settings";
-            this.settingsScroll = 0;
-            this.pickerRow = -1;
-            this.confirmIdx = -1;
-            this.render();
-          } else if (this.gSettings.showClock &&
-                     tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
-                     ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
-            this.currentPage = "clock";
-            this.saveLastPage();
-            this.render();
-          }
+        if (this.currentPage === "dashboard" || this.currentPage === "weather" ||
+            this.currentPage === "calendar") {
+          // No in-page tap targets — exit is the footer Home button above.
           return;
         }
 
@@ -2380,14 +2670,9 @@
         }
 
         if (this.currentPage === "settings") {
-          if (ty < UI_SET_TITLE_H) {
-            if (tx < UI_BACK_HIT_X1) {
-              this.currentPage = "dashboard";
-              this.saveLastPage();
-              this.render();
-            }
-            return;
-          }
+          // No back-to-HOME tap target in the title bar itself (plain
+          // label, no chevron) — exit is the footer Home button above.
+          if (ty < UI_SET_TITLE_H) return;
           let row = settingsItemAt(this.settingsScroll, ty);
           if (row >= 0) {
             if (row === ROW_FORGET_AP) {
@@ -2662,6 +2947,19 @@
         return true;
       }
 
+      // Mirrors jobWeather() in btc_ticker.ino — fire-and-forget like
+      // jobPrice/fetchPrice above (the job returns immediately; fetchWeather
+      // updates gWeather/weatherOkMs asynchronously). Respects the same
+      // "Market API Availability" diagnostic toggle as jobPrice so the
+      // outage-simulation controls cover weather too.
+      jobWeather() {
+        if (!this.apiSwitch.checked) {
+          return false;
+        }
+        this.fetchWeather();
+        return true;
+      }
+
       // Fetch klines backfill
       maybeBackfill() {
         if (!this.wifiConnected) return;
@@ -2801,6 +3099,63 @@
         document.getElementById("apiIndicator").className = "status-dot active";
       }
 
+      // Mirrors weatherFetch() in net_weather.cpp: Open-Meteo's keyless
+      // forecast API for the fixed WEATHER_LAT/WEATHER_LON, keeping only the
+      // fields the UI draws (current temp/condition, first
+      // WEATHER_NUM_HOURS of hourly, first WEATHER_NUM_DAYS of daily).
+      // Only commits into gWeather/weatherOkMs on a valid response — a
+      // failed or partial poll leaves the last-known-good conditions on
+      // screen instead of blanking to "--" (mirrors jobWeather() in
+      // btc_ticker.ino building into a scratch struct first).
+      fetchWeather() {
+        // forecast_hours asks for one extra hour (WEATHER_NUM_HOURS + 1);
+        // Open-Meteo's hourly window starts at the *current* hour, and we
+        // skip that leading entry below so the strip always shows the next
+        // WEATHER_NUM_HOURS hours (e.g. at 14:33 that's 15,16,...,20)
+        // instead of starting with the mostly-elapsed current hour.
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${WEATHER_LAT}&longitude=${WEATHER_LON}` +
+          `&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code` +
+          `&daily=temperature_2m_max,temperature_2m_min,weather_code` +
+          `&timezone=auto&timeformat=unixtime&forecast_days=5&forecast_hours=${WEATHER_NUM_HOURS + 1}`;
+        httpJson(url, "Open-Meteo")
+          .then(d => {
+            const hTime = (d.hourly && d.hourly.time) || [];
+            const hTemp = (d.hourly && d.hourly.temperature_2m) || [];
+            const hCode = (d.hourly && d.hourly.weather_code) || [];
+            const hours = [];
+            for (let i = 1; i < Math.min(WEATHER_NUM_HOURS + 1, hTime.length); i++) {
+              hours.push({ dt: hTime[i], temp: hTemp[i], cond: wmoToCond(hCode[i]) });
+            }
+            const dTime = (d.daily && d.daily.time) || [];
+            const dMax = (d.daily && d.daily.temperature_2m_max) || [];
+            const dMin = (d.daily && d.daily.temperature_2m_min) || [];
+            const dCode = (d.daily && d.daily.weather_code) || [];
+            const days = [];
+            for (let i = 0; i < Math.min(WEATHER_NUM_DAYS, dTime.length); i++) {
+              days.push({ dt: dTime[i], hi: dMax[i], lo: dMin[i], cond: wmoToCond(dCode[i]) });
+            }
+            const curCode = d.current ? d.current.weather_code : 0;
+            const valid = hours.length === WEATHER_NUM_HOURS && days.length === WEATHER_NUM_DAYS &&
+                          d.current && typeof d.current.temperature_2m === "number";
+            if (!valid) return;  // keep the last-known-good gWeather/weatherOkMs on screen
+            this.gWeather = {
+              valid,
+              tzOffset: d.utc_offset_seconds || 0,
+              curTemp: d.current ? d.current.temperature_2m : NaN,
+              todayHi: days.length ? days[0].hi : NaN,
+              todayLo: days.length ? days[0].lo : NaN,
+              curCond: wmoToCond(curCode),
+              curDesc: wmoDescription(curCode),
+              hours,
+              days
+            };
+            this.weatherOkMs = this.getSimMillis();
+          })
+          .catch(err => {
+            this.log("ERROR", "NET", `Open-Meteo fetch failed: ${err.message}`);
+          });
+      }
+
       // Fetch klines backfill helper — same provider as the price poll.
       async fetchKlines(limit) {
         const provider = this.getDataProvider();
@@ -2886,14 +3241,20 @@
       }
 
       // ── SETTINGS PAGES (mirrors ui.cpp) ──
-      drawSettingsTitle(title) {
+      // showBack draws the "< " affordance (picker → list); the top-level
+      // list exits via its footer Home button instead, so it omits it.
+      drawSettingsTitle(title, showBack) {
         const g = this.gfx;
         g.setTextSize(2);
-        g.setTextColor(COL_AMBER);
-        g.setCursor(8, 7);
-        g.print("<");
+        let titleX = 8;
+        if (showBack) {
+          g.setTextColor(COL_AMBER);
+          g.setCursor(8, 7);
+          g.print("<");
+          titleX = 28;
+        }
         g.setTextColor(COL_TEXT);
-        g.setCursor(28, 7);
+        g.setCursor(titleX, 7);
         g.print(title);
         g.drawFastHLine(0, UI_SET_TITLE_H - 1, CONTENT_RIGHT, COL_GRID);
       }
@@ -2913,15 +3274,15 @@
         const g = this.gfx;
         g.fillScreen(COL_BG);
 
-        // Clip rows under the fixed title bar
-        g.setClipRect(0, UI_SET_TITLE_H, SCREEN_W, SCREEN_H - UI_SET_TITLE_H);
+        // Clip rows under the fixed title bar, above the shared footer
+        g.setClipRect(0, UI_SET_TITLE_H, SCREEN_W, CONTENT_BOTTOM - UI_SET_TITLE_H);
 
         for (let i = 0; i < SET_ITEMS.length; i++) {
           const item = SET_ITEMS[i];
           const isHdr = !!item.header;
           const h = isHdr ? SET_HDR_H : SET_ROW_H;
           const y = setItemTop(i) - this.settingsScroll;
-          if (y + h <= UI_SET_TITLE_H || y >= SCREEN_H) continue;
+          if (y + h <= UI_SET_TITLE_H || y >= CONTENT_BOTTOM) continue;
 
           if (isHdr) {
             drawCaps(g, 12, y + 10, item.header, COL_TEXT3);
@@ -2964,7 +3325,7 @@
         // Scrollbar thumb, flush against CONTENT_RIGHT
         const maxScroll = settingsMaxScroll();
         if (maxScroll > 0) {
-          const viewH = SCREEN_H - UI_SET_TITLE_H;
+          const viewH = CONTENT_BOTTOM - UI_SET_TITLE_H;
           const listH = viewH + maxScroll;
           let thumbH = Math.floor(viewH * viewH / listH);
           if (thumbH < 12) thumbH = 12;
@@ -2973,14 +3334,15 @@
         }
 
         g.clearClipRect();
-        this.drawSettingsTitle("Settings");
+        this.drawSettingsTitle("Settings", false);
+        this.drawFooter(g);
       }
 
       renderSettingsPicker() {
         const g = this.gfx;
         const row = this.pickerRow;
         g.fillScreen(COL_BG);
-        this.drawSettingsTitle(SETTINGS_ROW_LABELS[row]);
+        this.drawSettingsTitle(SETTINGS_ROW_LABELS[row], true);
 
         g.setTextSize(1);
         g.setTextColor(COL_TEXT2);
@@ -3190,19 +3552,56 @@
         g.print(mm);
       }
 
-      drawClockClose(g) {
-        const x = UI_CLOCK_CLOSE_BTN_X;
-        const y = UI_CLOCK_CLOSE_BTN_Y;
-        const w = UI_CLOCK_CLOSE_BTN_W;
-        const h = UI_CLOCK_CLOSE_BTN_H;
-        const pressed = this.pressedIn(UI_CLOCK_CLOSE_HIT_X0, UI_CLOCK_CLOSE_HIT_Y0,
-                                       UI_CLOCK_CLOSE_HIT_X1, UI_CLOCK_CLOSE_HIT_Y1);
-        this.drawButtonChrome(g, x, y, w, h, 5, pressed);
-        const ix0 = x + 8, iy0 = y + 6, ix1 = x + w - 9, iy1 = y + h - 7;
-        g.drawLine(ix0, iy0, ix1, iy1, COL_AMBER);
-        g.drawLine(ix1, iy0, ix0, iy1, COL_AMBER);
-        g.drawLine(ix0 + 1, iy0, ix1 + 1, iy1, COL_AMBER);
-        g.drawLine(ix1 - 1, iy0, ix0 - 1, iy1, COL_AMBER);
+      // ── FOOTER (y 212..238) — mirrors uiDrawFooter in ui.cpp ──
+      // Feed-status pulse + wifi glyph + muted device stats on the left, a
+      // Home button on the right. Shared by every full-screen page
+      // (dashboard, Clock, Weather, HOME, and the top-level Settings list) —
+      // each ends its render with this. The Home button is the only way out
+      // of an app now — handleTap() checks the same UI_FOOTER_HOME_* box.
+      drawFooter(g) {
+        g.drawFastHLine(EDGE, CONTENT_BOTTOM, CONTENT_RIGHT - EDGE, COL_GRID);
+
+        const now = this.getSimMillis();
+        let feedCol;
+        let pulse = false;
+        if (!this.wifiConnected) {
+          feedCol = COL_BAD;
+        } else if (this.priceOkMs === 0) {
+          feedCol = COL_TEXT2;
+          pulse = true;
+        } else {
+          const age = now - this.priceOkMs;
+          const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
+          const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
+          if (age <= freshMs) {
+            feedCol = COL_GOOD;
+            pulse = true;
+          } else {
+            feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
+          }
+        }
+        // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap,
+        // vertically centered on the footer row (same center as the gear).
+        const pulseX = EDGE + 3;   // 7
+        const statusY = 226;
+        const wifiX = pulseX + 3 + 4 + 9;  // 23
+        const dotOn = !pulse || (Math.floor(now / 500) % 2 === 0);  // 500ms on / 500ms off
+        if (dotOn) g.fillCircle(pulseX, statusY, 3, feedCol);
+        g.drawWifi(wifiX, statusY, this.wifiConnected ? COL_GOOD : COL_BAD);
+
+        const pad2 = (n) => String(n).padStart(2, '0');
+        g.setTextSize(1);
+        g.setTextColor(COL_TEXT3);
+        g.setCursor(wifiX + 9 + 6, 222);
+        g.print(`CPU ${pad2(this.cpuPct)}%  RAM ${pad2(this.ramPct)}%  ROM ${pad2(this.romPct)}%`);
+
+        const homePressed = this.pressedIn(UI_FOOTER_HOME_X0, UI_FOOTER_HOME_Y0,
+                                           UI_FOOTER_HOME_X1, UI_FOOTER_HOME_Y1);
+        this.drawButtonChrome(g, UI_FOOTER_HOME_X0, UI_FOOTER_HOME_Y0, UI_FOOTER_HOME_W,
+                              UI_FOOTER_HOME_H, 4, homePressed);
+        g.drawHomeIcon(Math.floor((UI_FOOTER_HOME_X0 + UI_FOOTER_HOME_X1) / 2),
+                       Math.floor((UI_FOOTER_HOME_Y0 + UI_FOOTER_HOME_Y1) / 2), 9,
+                       homePressed ? COL_AMBER : COL_TEXT2);
       }
 
       renderClock() {
@@ -3220,17 +3619,278 @@
           };
         }
 
+        // All geometry below fits above CONTENT_BOTTOM, leaving room for the
+        // shared footer. No close control — exit is the footer Home button.
         if (this.clockMode === UI_CLOCK_MODE_ANALOG) {
-          this.drawAnalogFace(g, Math.floor(SCREEN_W / 2), Math.floor(SCREEN_H / 2) + 4, 92, t);
+          this.drawAnalogFace(g, Math.floor(SCREEN_W / 2), Math.floor(CONTENT_BOTTOM / 2), 78, t);
         } else if (this.clockMode === UI_CLOCK_MODE_DIGITAL) {
-          this.drawDigitalBlock(g, 0, 0, SCREEN_W, SCREEN_H, t, true);
+          this.drawDigitalBlock(g, 0, 0, SCREEN_W, CONTENT_BOTTOM, t, true);
         } else {
           const mid = Math.floor(SCREEN_W / 2);
-          g.drawFastVLine(mid, 40, SCREEN_H - 56, COL_GRID);
-          this.drawAnalogFace(g, Math.floor(mid / 2), Math.floor(SCREEN_H / 2) + 4, 68, t);
-          this.drawDigitalBlock(g, mid, 0, SCREEN_W - mid, SCREEN_H, t, false);
+          g.drawFastVLine(mid, 40, CONTENT_BOTTOM - 56, COL_GRID);
+          this.drawAnalogFace(g, Math.floor(mid / 2), Math.floor(CONTENT_BOTTOM / 2), 68, t);
+          this.drawDigitalBlock(g, mid, 0, SCREEN_W - mid, CONTENT_BOTTOM, t, false);
         }
-        this.drawClockClose(g);
+
+        this.drawFooter(g);
+      }
+
+      // ── HOME (iPad-style app launcher) — mirrors uiRenderHome in ui.cpp ──
+      // 4x3 grid of square tiles, centered on screen; only the first
+      // UI_HOME_APP_COUNT slots are populated (BTC TICKER, CLOCK, Settings,
+      // row-major) so future apps drop into the next free slot with no
+      // layout change. Tap routing lives in handleTap's "home" branch.
+      renderHome() {
+        const g = this.gfx;
+        g.fillScreen(COL_BG);
+
+        for (let slot = 0; slot < UI_HOME_APP_COUNT; slot++) {
+          const { x, y, w, h } = homeTileRect(slot);
+          const pressed = this.pressedIn(x, y, x + w, y + h);
+          g.fillRoundRect(x, y, w, h, 10, pressed ? COL_PANEL_HI : COL_PANEL);
+          g.drawRoundRect(x, y, w, h, 10, COL_BORDER);
+
+          const cx = x + Math.floor(w / 2);
+          const cy = y + Math.floor(h / 2) - 6;  // room for the caption below
+          if (slot === 0) {
+            // BTC TICKER: same "B-in-circle" brand glyph as the boot splash.
+            g.drawCircle(cx, cy, 16, COL_AMBER);
+            g.setTextSize(2);
+            g.setTextColor(COL_AMBER);
+            g.setCursor(cx - Math.floor(g.textWidth("B") / 2), cy - 8);
+            g.print("B");
+          } else if (slot === 1) {
+            // CLOCK: a static analog face (fixed at 10:10, the classic
+            // clock-icon pose) — same component as the full-screen clock
+            // page, just at icon radius. Deliberately not live: it's an
+            // app icon, not a second clock, so it shouldn't tick.
+            this.drawAnalogFace(g, cx, cy, 18, { hour: 10, min: 10, sec: 0 });
+          } else if (slot === 2) {
+            // Settings: the same gear glyph the old footer button used.
+            g.drawGear(cx, cy, COL_TEXT2);
+          } else if (slot === 3) {
+            // Weather: sun glyph regardless of live conditions — a fixed
+            // condition id here would go stale before the first fetch.
+            g.drawWeatherIcon(cx, cy, 16, 800);
+          } else {
+            // Calendar: wall-calendar glyph, echoing the full page's
+            // today-highlight.
+            g.drawCalendarIcon(cx, cy, 16);
+          }
+
+          const caption = HOME_APP_LABELS[slot];
+          drawCaps(g, x + Math.floor((w - capsWidth(caption)) / 2), y + h - 14, caption, COL_TEXT2);
+        }
+
+        this.drawFooter(g);
+      }
+
+      // ── CALENDAR — mirrors uiRenderCalendar in ui.cpp ──
+      // One view only: the current month, Sunday-first, today highlighted.
+      // No prev/next navigation and no in-page controls — exit is the
+      // footer Home button, same as Dashboard/Weather.
+      renderCalendar() {
+        const g = this.gfx;
+        g.fillScreen(COL_BG);
+
+        const haveTime = this.simulatedTimeEpoch > NTP_VALID_EPOCH;
+        if (!haveTime) {
+          drawCentered(g, Math.floor(CONTENT_BOTTOM / 2) - 4, "WAITING FOR TIME SYNC", COL_TEXT3, 1);
+          this.drawFooter(g);
+          return;
+        }
+
+        // Same TZ-shift trick as getICTDateTime(): read UTC fields off a
+        // Date shifted by the device's ICT (UTC+7) offset.
+        const shifted = new Date((this.simulatedTimeEpoch + 7 * 3600) * 1000);
+        const year = shifted.getUTCFullYear();
+        const mon = shifted.getUTCMonth();  // 0-11
+        const today = shifted.getUTCDate();
+
+        const firstWday = new Date(Date.UTC(year, mon, 1)).getUTCDay();
+        const numDays = new Date(Date.UTC(year, mon + 1, 0)).getUTCDate();
+
+        drawCentered(g, 8, `${CAL_MONTHS[mon]} ${year}`, COL_TEXT, 2);
+
+        for (let c = 0; c < CAL_COLS; c++) {
+          const x = CAL_MARGIN_X + c * CAL_CELL_W;
+          drawCaps(g, x + Math.floor((CAL_CELL_W - capsWidth(CAL_WDAY[c])) / 2), 34, CAL_WDAY[c], COL_TEXT3);
+        }
+        g.drawFastHLine(EDGE, 44, CONTENT_RIGHT - EDGE, COL_GRID);
+
+        // Table box + internal cell separators, fixed at CAL_ROWS so the
+        // grid's footprint doesn't shift month to month.
+        const gridW = CAL_COLS * CAL_CELL_W;
+        const gridH = CAL_ROWS * CAL_CELL_H;
+        g.drawRect(CAL_MARGIN_X, CAL_GRID_TOP, gridW, gridH, COL_GRID);
+        for (let c = 1; c < CAL_COLS; c++) {
+          g.drawFastVLine(CAL_MARGIN_X + c * CAL_CELL_W, CAL_GRID_TOP, gridH, COL_GRID);
+        }
+        for (let r = 1; r < CAL_ROWS; r++) {
+          g.drawFastHLine(CAL_MARGIN_X, CAL_GRID_TOP + r * CAL_CELL_H, gridW, COL_GRID);
+        }
+
+        for (let day = 1; day <= numDays; day++) {
+          const cellIdx = firstWday + (day - 1);
+          const col = cellIdx % CAL_COLS;
+          const row = Math.floor(cellIdx / CAL_COLS);
+          const x = CAL_MARGIN_X + col * CAL_CELL_W;
+          const y = CAL_GRID_TOP + row * CAL_CELL_H;
+          const cx = x + Math.floor(CAL_CELL_W / 2);
+          const cy = y + Math.floor(CAL_CELL_H / 2);
+
+          const isToday = day === today;
+          if (isToday) g.fillCircle(cx, cy, 12, COL_AMBER);
+
+          const buf = String(day);
+          g.setTextSize(1);
+          g.setTextColor(isToday ? COL_BG : (col === 0 || col === 6 ? COL_TEXT3 : COL_TEXT));
+          g.setCursor(cx - Math.floor(g.textWidth(buf) / 2), cy - 4);
+          g.print(buf);
+        }
+
+        this.drawFooter(g);
+      }
+
+      // ── WEATHER — mirrors uiRenderWeather in ui.cpp ──
+      // Current conditions (top), next WEATHER_NUM_HOURS hours (middle
+      // strip), WEATHER_NUM_DAYS days as rows with an iOS-style range bar
+      // scaled to the week's overall min/max (bottom). No in-page controls —
+      // exit is the footer Home button.
+      renderWeather() {
+        const g = this.gfx;
+        const wx = this.gWeather;
+        g.fillScreen(COL_BG);
+
+        // ── current conditions ──
+        drawCaps(g, EDGE, 4, WEATHER_CITY, COL_TEXT2);
+
+        let updBuf;
+        if (this.weatherOkMs === 0) {
+          updBuf = "no data yet";
+        } else {
+          const minAgo = Math.floor((this.getSimMillis() - this.weatherOkMs) / 60000);
+          updBuf = `updated ${minAgo}m ago`;
+        }
+        drawCaps(g, CONTENT_RIGHT - capsWidth(updBuf), 4, updBuf, COL_TEXT3);
+
+        drawWeatherTemp(g, EDGE, 18, 4, wx.curTemp, COL_TEXT, wx.valid);
+
+        // Icon + condition text (size 2) on one row, today's H/L (size 3,
+        // numbers in COL_TEXT/white, "H:"/"L:" labels in COL_TEXT2/gray) on
+        // the row below. Rows are right-aligned to CONTENT_RIGHT when they
+        // fit; the condition row instead clamps to MIN_ROW_X and clips at
+        // CONTENT_RIGHT for the longest OWM-taxonomy strings (e.g.
+        // "thunderstorm with hail"), which even at size 2 can outrun the
+        // screen — better a clean cutoff than overlapping curTemp.
+        const curIconR = 14;
+        const row1Y = 13;                       // icon + condition row
+        const curRowCy = row1Y + curIconR;      // icon vertical center
+        const row2Y = row1Y + curIconR * 2 + 2; // H/L row, just under the icon
+        const MIN_ROW_X = 88; // clears the size-4 curTemp digits + gap
+
+        g.setTextSize(2);
+        const desc = wx.valid ? wx.curDesc : "connecting";
+        const descW = g.textWidth(desc);
+
+        g.setTextSize(3);
+        const wLbl = g.textWidth("H:");
+        const hiW = weatherTempWidth(g, 3, wx.todayHi, wx.valid);
+        const loW = weatherTempWidth(g, 3, wx.todayLo, wx.valid);
+        const hlW = wLbl + hiW + 6 + wLbl + loW;
+
+        const row1W = curIconR * 2 + 6 + descW;
+        const rowX = Math.max(CONTENT_RIGHT - row1W, MIN_ROW_X);
+        const descTextY = curRowCy - 8; // size-2 text is 16px tall
+
+        g.drawWeatherIcon(rowX + curIconR, curRowCy, curIconR, wx.valid ? wx.curCond : 800);
+
+        const descX = rowX + curIconR * 2 + 6;
+        g.setClipRect(descX, descTextY, CONTENT_RIGHT - descX, 16);
+        g.setTextSize(2);
+        g.setTextColor(COL_TEXT2);
+        g.setCursor(descX, descTextY);
+        g.print(desc);
+        g.clearClipRect();
+
+        // "H:34° L:26°" from plain "H:"/"L:" labels plus drawWeatherTemp's
+        // hollow-circle degree marks (not a font glyph).
+        const hlX = CONTENT_RIGHT - hlW;
+        g.setTextSize(3);
+        g.setTextColor(COL_TEXT2);
+        g.setCursor(hlX, row2Y);
+        g.print("H:");
+        drawWeatherTemp(g, hlX + wLbl, row2Y, 3, wx.todayHi, COL_TEXT, wx.valid);
+        g.setTextSize(3);
+        g.setTextColor(COL_TEXT2);
+        g.setCursor(hlX + wLbl + hiW + 6, row2Y);
+        g.print("L:");
+        drawWeatherTemp(g, hlX + wLbl + hiW + 6 + wLbl, row2Y, 3, wx.todayLo, COL_TEXT, wx.valid);
+
+        g.drawFastHLine(0, 68, CONTENT_RIGHT, COL_GRID);
+
+        // ── hourly strip ──
+        const hourColW = Math.floor(SCREEN_W / WEATHER_NUM_HOURS);
+        for (let i = 0; i < WEATHER_NUM_HOURS; i++) {
+          const cx = i * hourColW + Math.floor(hourColW / 2);
+          let hbuf = "--";
+          if (wx.valid) {
+            const t = weatherLocalTime(wx.hours[i].dt, wx.tzOffset);
+            hbuf = String(t.getUTCHours()).padStart(2, "0");
+          }
+          g.setTextSize(1);
+          g.setTextColor(COL_TEXT3);
+          g.setCursor(cx - Math.floor(g.textWidth(hbuf) / 2), 74);
+          g.print(hbuf);
+
+          g.drawWeatherIcon(cx, 92, 12, wx.valid ? wx.hours[i].cond : 800);
+
+          const tw = weatherTempWidth(g, 1, wx.valid ? wx.hours[i].temp : NaN, wx.valid);
+          drawWeatherTemp(g, cx - Math.floor(tw / 2), 108, 1, wx.valid ? wx.hours[i].temp : NaN, COL_TEXT, wx.valid);
+        }
+
+        g.drawFastHLine(0, 122, CONTENT_RIGHT, COL_GRID);
+
+        // ── 5-day forecast (rows) ──
+        let weekLo = Infinity, weekHi = -Infinity;
+        if (wx.valid) {
+          for (let i = 0; i < WEATHER_NUM_DAYS; i++) {
+            if (wx.days[i].lo < weekLo) weekLo = wx.days[i].lo;
+            if (wx.days[i].hi > weekHi) weekHi = wx.days[i].hi;
+          }
+        }
+
+        const dayTop = 126;
+        const dayBottom = CONTENT_BOTTOM - 4;  // leaves room for the shared footer
+        const rowH = Math.floor((dayBottom - dayTop) / WEATHER_NUM_DAYS);
+        for (let i = 0; i < WEATHER_NUM_DAYS; i++) {
+          const rowY = dayTop + i * rowH;
+          const midY = rowY + Math.floor(rowH / 2);
+
+          let wday = "---";
+          if (wx.valid) {
+            const t = weatherLocalTime(wx.days[i].dt, wx.tzOffset);
+            wday = WEATHER_WDAY[t.getUTCDay()];
+          }
+          drawCaps(g, EDGE, midY - 4, wday, COL_TEXT2);
+
+          g.drawWeatherIcon(EDGE + 44, midY, 7, wx.valid ? wx.days[i].cond : 800);
+
+          const loW2 = weatherTempWidth(g, 1, wx.valid ? wx.days[i].lo : NaN, wx.valid);
+          const hiW2 = weatherTempWidth(g, 1, wx.valid ? wx.days[i].hi : NaN, wx.valid);
+          const loX = EDGE + 64;
+          const hiX = CONTENT_RIGHT - hiW2;
+          drawWeatherTemp(g, loX, midY - 4, 1, wx.valid ? wx.days[i].lo : NaN, COL_TEXT3, wx.valid);
+          drawWeatherTemp(g, hiX, midY - 4, 1, wx.valid ? wx.days[i].hi : NaN, COL_TEXT, wx.valid);
+
+          if (wx.valid) {
+            drawWeatherDayBar(g, loX + loW2 + 8, hiX - 8, midY, wx.days[i].lo, wx.days[i].hi, weekLo, weekHi);
+          } else {
+            g.drawFastHLine(loX + loW2 + 8, midY, (hiX - 8) - (loX + loW2 + 8), COL_GRID);
+          }
+        }
+
+        this.drawFooter(g);
       }
 
       // ── BOOT SPLASH — mirrors uiRenderSplash in ui.cpp ──
@@ -3324,6 +3984,12 @@
           this.renderWifiSetup();
         } else if (this.currentPage === "splash") {
           this.renderSplash();
+        } else if (this.currentPage === "home") {
+          this.renderHome();
+        } else if (this.currentPage === "weather") {
+          this.renderWeather();
+        } else if (this.currentPage === "calendar") {
+          this.renderCalendar();
         } else {
           // ── DASHBOARD (mirrors uiRender in ui.cpp) ──
           g.fillScreen(COL_BG);
@@ -3689,49 +4355,9 @@
             }
           }
 
-          // 5. Footer: feed-status pulse + wifi, muted device stats, gear
-          g.drawFastHLine(EDGE, 212, CONTENT_RIGHT - EDGE, COL_GRID);
-
-          {
-            const now = this.getSimMillis();
-            let feedCol;
-            let pulse = false;
-            if (!this.wifiConnected) {
-              feedCol = COL_BAD;
-            } else if (this.priceOkMs === 0) {
-              feedCol = COL_TEXT2;
-              pulse = true;
-            } else {
-              const age = now - this.priceOkMs;
-              const freshMs = 2 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 3000;
-              const staleMs = 4 * PRICE_IV_MS[this.gSettings.priceIvIdx] + 30000;
-              if (age <= freshMs) {
-                feedCol = COL_GOOD;
-                pulse = true;
-              } else {
-                feedCol = age <= staleMs ? COL_AMBER : COL_BAD;
-              }
-            }
-            // Pulse (r=3) then wifi arcs (outer r=9) with a few px of gap,
-            // vertically centered on the footer row (same center as the gear).
-            const pulseX = EDGE + 3;   // 7
-            const statusY = 226;
-            const wifiX = pulseX + 3 + 4 + 9;  // 23
-            const dotOn = !pulse || (Math.floor(now / 500) % 2 === 0);  // 500ms on / 500ms off
-            if (dotOn) g.fillCircle(pulseX, statusY, 3, feedCol);
-            g.drawWifi(wifiX, statusY, this.wifiConnected ? COL_GOOD : COL_BAD);
-
-            const pad2 = (n) => String(n).padStart(2, '0');
-            g.setTextSize(1);
-            g.setTextColor(COL_TEXT3);
-            g.setCursor(wifiX + 9 + 6, 222);
-            g.print(`CPU ${pad2(this.cpuPct)}%  RAM ${pad2(this.ramPct)}%  ROM ${pad2(this.romPct)}%`);
-          }
-
-          // Settings button: outlined hit target, flush with CONTENT_RIGHT
-          const gearPressed = this.pressedIn(UI_GEAR_HIT_X0, UI_GEAR_HIT_Y0, SCREEN_W, SCREEN_H);
-          this.drawButtonChrome(g, CONTENT_RIGHT - 32, 216, 28, 20, 5, gearPressed);
-          g.drawGear(CONTENT_RIGHT - 18, 226, COL_TEXT2);
+          // 5. Footer: feed-status pulse + wifi, muted device stats, Home
+          // button — leaving the dashboard is via that Home button.
+          this.drawFooter(g);
         }
 
         // One-frame touch feedback border, overlaid while a touch registers

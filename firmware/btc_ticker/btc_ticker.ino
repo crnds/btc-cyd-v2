@@ -3,8 +3,13 @@
 // LittleFS ring-file mini-database surviving reboots/power loss. Candle
 // size, chart range, price fetch cadence, chart style, brightness, night
 // mode (red-only UI 23:00-08:00, plus a manual force-on), and screen
-// orientation are all user-configurable from the Settings page (gear
-// button, bottom right).
+// orientation are all user-configurable from the Settings page.
+//
+// Navigation is an iPad-style home screen: Page::HOME shows a 4x3 grid of
+// square app tiles (BTC TICKER, CLOCK, Settings); tapping a tile launches
+// that app, and the Home button in the shared footer (ui.cpp's
+// uiDrawFooter(), UI_FOOTER_HOME_* hit box) jumps straight back to HOME —
+// the only way out of an app, by design (no in-app back/close controls).
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
@@ -21,6 +26,7 @@
 #include "net_http.h"
 #include "net_price.h"
 #include "net_klines.h"
+#include "net_weather.h"
 #include "settings.h"
 #include "ui.h"
 #include "wifi_creds.h"
@@ -116,8 +122,20 @@ float dayHigh = NAN;  // 24h high/low from the ticker payload, for the range bar
 float dayLow = NAN;
 uint32_t priceOkMs = 0;
 
-enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK, WIFI_SETUP, SPLASH };
-static Page currentPage = Page::DASHBOARD;
+WeatherData gWeather{};
+uint32_t weatherOkMs = 0;  // millis() of last successful weather fetch, 0 = never
+
+enum class Page : uint8_t { DASHBOARD, SETTINGS, CLOCK, WIFI_SETUP, SPLASH, HOME, WEATHER, CALENDAR };
+static Page currentPage = Page::HOME;
+
+// Single source of truth for the HOME tile grid's slot->app mapping (see
+// handleTouch()'s Page::HOME branch). ui.h/ui.cpp's UI_HOME_APP_COUNT,
+// HOME_APP_LABELS, and uiRenderHome()'s icon dispatch must stay in this same
+// slot order — there's no way to share one array across the .ino/ui.cpp
+// boundary, so keep both comments pointing at each other.
+static const Page HOME_SLOT_PAGE[UI_HOME_APP_COUNT] = {
+  Page::DASHBOARD, Page::CLOCK, Page::SETTINGS, Page::WEATHER, Page::CALENDAR
+};
 // Set when setup() enters Page::SPLASH (no cached candles to paint yet);
 // millis() timestamp the loader phase and the exit timeout are measured from.
 static uint32_t splashStartMs = 0;
@@ -133,14 +151,18 @@ static void renderIfDue(bool force = false);
 static void applySettingChange(uint16_t mask);
 
 // ── touch ──────────────────────────────────────────────────
-// Dashboard: gear opens Settings; status-bar clock opens full-screen clock.
-// Full-screen clock: "X" top-left returns to dashboard; any other tap cycles
-// split → analog → digital → split. Settings list: drag scrolls; tap on a
-// binary row (On/Off) toggles it in place, tap on a multi-choice row opens
-// its option picker. Picker: tap an option to select it and return —
-// except candle size, which first shows a confirmation page because it
-// wipes the candle DB. Taps fire on release so a drag that starts on a row
-// doesn't also select it.
+// Home: tap a tile to launch BTC TICKER / CLOCK / Settings. Full-screen
+// clock: any tap cycles split → analog → digital → split (no close
+// control — see the footer Home button below). Settings list: drag scrolls;
+// tap on a binary row (On/Off) toggles it in place, tap on a multi-choice
+// row opens its option picker. Picker: tap an option to select it and
+// return — except candle size, which first shows a confirmation page
+// because it wipes the candle DB. Taps fire on release so a drag that
+// starts on a row doesn't also select it.
+// Footer Home button: every page that draws the shared footer (Dashboard,
+// Clock, Weather, HOME, and the top-level Settings list — not the Settings
+// picker/confirm sub-views, which reuse that screen band for their own rows
+// or buttons instead) jumps to Page::HOME on tap — the only way out of an app.
 // Feedback: while any touch registers, renderIfDue overlays a 3px 4-side
 // border (uiDrawTouchFlash) for one frame per detection, and the pressed
 // row/button highlights (uiSetPressedPoint).
@@ -150,14 +172,28 @@ static int dragStartScroll = 0;
 static const int DRAG_THRESHOLD_PX = 10;  // resistive touch jitters a few px
 static bool touchFlashOn = false;  // touch level at the last handleTouch pass
 
-// Persists which of the two restorable pages (dashboard or full-screen
-// clock, plus clock face) is current, so setup() can bring it back after a
-// reset. Settings/Wi-Fi-setup aren't restorable — call sites only invoke
-// this on transitions into/within DASHBOARD or CLOCK.
+// Single source of truth for the Page<->persisted "s.page" byte mapping —
+// index in this array IS the persisted value, read back by the restore
+// switch in setup(). Settings/Wi-Fi-setup aren't restorable, so they're not
+// listed here and saveLastPage() is simply a no-op for them. This is an
+// on-flash format: never reorder existing entries, only append new ones.
+static const Page RESTORABLE_PAGES[] = {
+  Page::DASHBOARD, Page::CLOCK, Page::HOME, Page::WEATHER, Page::CALENDAR
+};
+static const uint8_t RESTORABLE_PAGE_COUNT =
+    sizeof(RESTORABLE_PAGES) / sizeof(RESTORABLE_PAGES[0]);
+
+// Persists which of the RESTORABLE_PAGES is current, so setup() can bring
+// it back after a reset. Call sites only invoke this on transitions
+// into/within a restorable page.
 static void saveLastPage() {
-if (currentPage != Page::DASHBOARD && currentPage != Page::CLOCK) return;
-prefs.putUChar("s.page", currentPage == Page::CLOCK ? 1 : 0);
-prefs.putUChar("s.clkMode", clockMode);
+for (uint8_t i = 0; i < RESTORABLE_PAGE_COUNT; i++) {
+  if (RESTORABLE_PAGES[i] == currentPage) {
+    prefs.putUChar("s.page", i);
+    prefs.putUChar("s.clkMode", clockMode);
+    return;
+  }
+}
 }
 
 // Persist every row named by a settingsSet() change-mask and apply side
@@ -183,37 +219,63 @@ esp_restart();
 return;
 }
 
-if (currentPage == Page::CLOCK) {
-// Close "X" top-left — generous hit zone shared with ui.h drawing.
-if (tx >= UI_CLOCK_CLOSE_HIT_X0 && tx < UI_CLOCK_CLOSE_HIT_X1 &&
-    ty >= UI_CLOCK_CLOSE_HIT_Y0 && ty < UI_CLOCK_CLOSE_HIT_Y1) {
-currentPage = Page::DASHBOARD;
+// Universal footer Home button (ui.h's UI_FOOTER_HOME_*): every page that
+// draws the shared footer jumps to Page::HOME from here, ahead of each
+// page's own tap handling below so e.g. the clock's whole-screen tap-to-
+// cycle doesn't also fire. Excludes the Settings picker/confirm sub-views,
+// which don't draw the footer and reuse that screen band for their own rows
+// /buttons — checked further down, past this block.
+bool onFooterPage = currentPage == Page::DASHBOARD || currentPage == Page::CLOCK ||
+                    currentPage == Page::WEATHER || currentPage == Page::HOME ||
+                    currentPage == Page::CALENDAR ||
+                    (currentPage == Page::SETTINGS && pickerRow < 0 && confirmIdx < 0);
+if (onFooterPage && tx >= UI_FOOTER_HOME_X0 && tx < UI_FOOTER_HOME_X1 &&
+    ty >= UI_FOOTER_HOME_Y0 && ty < UI_FOOTER_HOME_Y1) {
+if (currentPage != Page::HOME) {
+pickerRow = -1;
+confirmIdx = -1;
+currentPage = Page::HOME;
 saveLastPage();
 renderIfDue(true);
+}
 return;
 }
-// Whole-screen tap cycles the three clock presentations.
+
+if (currentPage == Page::HOME) {
+// Tile grid: tap routes to the corresponding app. Leaving an app is via
+// the footer Home button above — there's no in-app back affordance.
+// HOME_SLOT_PAGE is the single source of truth for slot order; ui.cpp's
+// uiRenderHome() icon dispatch and HOME_APP_LABELS must stay in the same
+// order (see the comment there).
+int slot = uiHomeTileAt(tx, ty);
+if (slot >= 0 && slot < UI_HOME_APP_COUNT) {
+currentPage = HOME_SLOT_PAGE[slot];
+if (currentPage == Page::SETTINGS) {
+settingsScroll = 0;
+pickerRow = -1;
+confirmIdx = -1;
+} else {
+// Keep last clockMode so re-entry restores the user's preferred face
+// (only relevant for CLOCK, harmless no-op field write otherwise).
+saveLastPage();
+}
+renderIfDue(true);
+}
+return;
+}
+
+if (currentPage == Page::CLOCK) {
+// Whole-screen tap (outside the footer Home button above) cycles the
+// three clock presentations.
 clockMode = (uint8_t)((clockMode + 1) % UI_CLOCK_MODE_COUNT);
 saveLastPage();
 renderIfDue(true);
 return;
 }
 
-if (currentPage == Page::DASHBOARD) {
-if (tx >= UI_GEAR_HIT_X0 && ty >= UI_GEAR_HIT_Y0) {
-currentPage = Page::SETTINGS;
-settingsScroll = 0;
-pickerRow = -1;
-confirmIdx = -1;
-renderIfDue(true);
-} else if (gSettings.showClock &&
-           tx >= UI_CLOCK_HIT_X0 && tx < UI_CLOCK_HIT_X1 &&
-           ty >= UI_CLOCK_HIT_Y0 && ty < UI_CLOCK_HIT_Y1) {
-currentPage = Page::CLOCK;
-// Keep last clockMode so re-entry restores the user's preferred face.
-saveLastPage();
-renderIfDue(true);
-}
+if (currentPage == Page::DASHBOARD || currentPage == Page::WEATHER ||
+    currentPage == Page::CALENDAR) {
+// No in-page tap targets — exit is the footer Home button above.
 return;
 }
 
@@ -273,15 +335,9 @@ renderIfDue(true);
 return;
 }
 
-// Settings list page
-if (ty < UI_SET_TITLE_H) {
-if (tx < UI_BACK_HIT_X1) {
-currentPage = Page::DASHBOARD;
-saveLastPage();
-renderIfDue(true);
-}
-return;
-}
+// Settings list page. No back-to-HOME tap target in the title bar itself
+// (plain label, no chevron) — exit is the footer Home button above.
+if (ty < UI_SET_TITLE_H) return;
 int row = uiSettingsItemAt(settingsScroll, ty);
 if (row >= 0) {
 if (row == ROW_FORGET_AP) {
@@ -368,6 +424,22 @@ configTzTime(TZ_INFO, NTP_SERVER);
 return true;
 }
 
+static bool jobWeather() {
+// One-shot fetch needs its own TLS handshake headroom — same one-session
+// discipline maybeBackfill() follows (see fetchPriceRelease()'s header
+// comment).
+fetchPriceRelease();
+// Fetch into a scratch struct first: weatherFetch() leaves its out-param
+// invalid on failure (by design, see net_weather.h), and committing
+// straight into gWeather would blank a transient failure's last-known-good
+// conditions instead of leaving them on screen.
+WeatherData fresh{};
+if (!weatherFetch(fresh)) return false;
+gWeather = fresh;
+weatherOkMs = millis();
+return true;
+}
+
 struct Job {
 const char* name;
 uint32_t interval;
@@ -380,6 +452,7 @@ static const uint32_t RETRY_BASE_MS = 1000;
 static const uint32_t RETRY_MAX_MS = 60000;
 static const uint32_t PRICE_INTERVAL_MS = 1000;  // overwritten from settings in setup()
 static const uint32_t NTP_INTERVAL_MS = 6UL * 3600 * 1000;
+static const uint32_t WEATHER_INTERVAL_MS = 10UL * 60 * 1000;  // conditions change slowly
 
 // Doubling backoff, capped at RETRY_MAX_MS — shared by the job scheduler
 // below and maybeBackfill()'s own retry timer.
@@ -390,6 +463,7 @@ return cur * 2 > RETRY_MAX_MS ? RETRY_MAX_MS : cur * 2;
 static Job jobs[] = {
 {"price", PRICE_INTERVAL_MS, jobPrice, 0, RETRY_BASE_MS},
 {"ntp", NTP_INTERVAL_MS, jobNtp, 0, RETRY_BASE_MS},
+{"weather", WEATHER_INTERVAL_MS, jobWeather, 0, RETRY_BASE_MS},
 };
 
 // runs at most ONE due job per pass, round-robin, so a high-frequency job
@@ -682,28 +756,45 @@ renderedOnce = true;
 bool night = nightModeActive();
 uiSetNightMode(night);
 applyNightBrightness(night);
+
+// Every page below except Wi-Fi setup/Splash ends with the shared footer
+// (Dashboard, Clock, Weather, HOME, and the top-level Settings list — not
+// the Settings picker/confirm sub-views), so they all need this snapshot.
+UiFooterStatus fs;
+fs.wifiConnected = WiFi.status() == WL_CONNECTED;
+fs.priceOkMs = priceOkMs;
+fs.cpuPct = gCpuPct;
+fs.romPct = romUsagePct();
+fs.ramPct = ramUsagePct();
+
 if (currentPage == Page::SETTINGS) {
   if (confirmIdx >= 0 && pickerRow >= 0) uiRenderConfirm(g, pickerRow, confirmIdx);
   else if (pickerRow >= 0) uiRenderSettingsPicker(g, pickerRow);
-  else uiRenderSettings(g, settingsScroll);
-} else if (currentPage == Page::CLOCK) {
-  uiRenderClock(g, clockMode);
+  else uiRenderSettings(g, settingsScroll, fs);
 } else if (currentPage == Page::WIFI_SETUP) {
   uiRenderWifiSetup(g, WIFI_PORTAL_SSID);
 } else if (currentPage == Page::SPLASH) {
   uiRenderSplash(g, WiFi.status() == WL_CONNECTED, millis() - splashStartMs);
+} else if (currentPage == Page::CLOCK) {
+  uiRenderClock(g, clockMode, fs);
+} else if (currentPage == Page::HOME) {
+  uiRenderHome(g, fs);
+} else if (currentPage == Page::WEATHER) {
+  uiRenderWeather(g, gWeather, weatherOkMs, WEATHER_CITY, fs);
+} else if (currentPage == Page::CALENDAR) {
+  uiRenderCalendar(g, fs);
 } else {
-UiState st;
-st.wifiConnected = WiFi.status() == WL_CONNECTED;
-st.priceOkMs = priceOkMs;
-st.price = lastPrice;
-st.changePct = changePct;
-st.dayHigh = dayHigh;
-st.dayLow = dayLow;
-st.cpuPct = gCpuPct;
-st.romPct = romUsagePct();
-st.ramPct = ramUsagePct();
-uiRender(g, st);
+  UiState st;
+  st.wifiConnected = fs.wifiConnected;
+  st.priceOkMs = fs.priceOkMs;
+  st.price = lastPrice;
+  st.changePct = changePct;
+  st.dayHigh = dayHigh;
+  st.dayLow = dayLow;
+  st.cpuPct = fs.cpuPct;
+  st.romPct = fs.romPct;
+  st.ramPct = fs.ramPct;
+  uiRender(g, st);
 }
 if (touchFlashOn) uiDrawTouchFlash(g);  // one-frame border per touch register
 presentFrame();
@@ -747,13 +838,15 @@ prefs.begin("ticker", false);
 prefs.remove("briIdx");  // legacy key, superseded by settings.h's "s.bri"
 settingsLoad(prefs);
 
-// Restore the page the user was actually looking at (dashboard or one of the
-// full-screen clock faces) so a reset/power-cycle doesn't bounce back to the
-// dashboard. Settings/Wi-Fi-setup are transient and never saved here (see
-// saveLastPage()), so a reset mid-settings falls back to the dashboard.
+// Restore the page the user was actually looking at (HOME, dashboard, or
+// one of the full-screen clock faces) so a reset/power-cycle doesn't bounce
+// back to HOME. Settings/Wi-Fi-setup are transient and never saved here
+// (see saveLastPage()), so a reset mid-settings falls back to HOME. A fresh
+// device (no "s.page" key yet) also lands on HOME.
 clockMode = prefs.getUChar("s.clkMode", UI_CLOCK_MODE_SPLIT);
 if (clockMode >= UI_CLOCK_MODE_COUNT) clockMode = UI_CLOCK_MODE_SPLIT;
-currentPage = (prefs.getUChar("s.page", 0) == 1) ? Page::CLOCK : Page::DASHBOARD;
+uint8_t pageCode = prefs.getUChar("s.page", 2);
+currentPage = (pageCode < RESTORABLE_PAGE_COUNT) ? RESTORABLE_PAGES[pageCode] : Page::HOME;
 
 gfx.setRotation(gSettings.flip ? 3 : 1);
 // Seed backlight before the first paint. gLastBriDuty starts as 0xFF so the
@@ -774,7 +867,9 @@ Serial.printf("store: %d candles loaded from flash\n", loaded);
 // to paint from flash, so show the boot splash instead of the dashboard's
 // bare "--" price / "OFFLINE — NO CACHED DATA" placeholder while Wi-Fi
 // connects and the first price payload arrives. Skipped if the restored
-// page is the full-screen clock — that doesn't need price data at all.
+// page is HOME or the full-screen clock — neither needs price data at all;
+// launching BTC TICKER from a HOME tile goes straight to the dashboard,
+// whose own placeholders already cover the no-data case.
 if (loaded == 0 && currentPage == Page::DASHBOARD) {
   currentPage = Page::SPLASH;
   splashStartMs = millis();

@@ -2,6 +2,19 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include <Arduino.h>
+#include "net_weather.h"
+
+// Device-status inputs shown in the shared footer (feed-status pulse, wifi
+// glyph, CPU/RAM/ROM stats) — every full-screen page (dashboard, Clock,
+// Weather, HOME) ends its render with uiDrawFooter(g, fs) using one of these,
+// filled once per frame in btc_ticker.ino's renderIfDue().
+struct UiFooterStatus {
+  bool wifiConnected;
+  uint32_t priceOkMs;  // millis() of last successful price fetch, 0 = never
+  uint8_t cpuPct;      // 0-100, loop busy-time approximation
+  uint8_t romPct;      // 0-100, sketch flash usage
+  uint8_t ramPct;      // 0-100, heap usage
+};
 
 struct UiState {
   bool wifiConnected;
@@ -20,8 +33,28 @@ struct UiState {
 // ring/forming candle from candles.h directly.
 void uiRender(lgfx::LovyanGFX* g, const UiState& st);
 
+// Draws the shared footer (feed-status pulse + wifi glyph, muted device
+// stats, Home button) common to every full-screen page. Called at the end
+// of uiRender() and of uiRenderClock()/uiRenderWeather()/uiRenderHome()/
+// uiRenderSettings() (list page only — the picker/confirm sub-views don't
+// draw it).
+void uiDrawFooter(lgfx::LovyanGFX* g, const UiFooterStatus& fs);
+
+// Footer Home button hit box, shared between drawing (uiDrawFooter) and
+// hit-testing (btc_ticker.ino's handleTap) so they can't drift apart. Tapping
+// here jumps straight to Page::HOME — the only way out of an app now that
+// the long-press-to-home gesture is gone. Sized generously (most of the 28px
+// footer band, well clear of the CPU/RAM/ROM stats text to its left) since
+// resistive touch rewards a big, easy-to-land target over a tight one.
+static const int UI_FOOTER_HOME_W  = 64;
+static const int UI_FOOTER_HOME_H  = 26;
+static const int UI_FOOTER_HOME_X1 = 316;  // CONTENT_RIGHT - EDGE
+static const int UI_FOOTER_HOME_X0 = UI_FOOTER_HOME_X1 - UI_FOOTER_HOME_W;
+static const int UI_FOOTER_HOME_Y0 = 213;  // just below the footer hairline (212)
+static const int UI_FOOTER_HOME_Y1 = UI_FOOTER_HOME_Y0 + UI_FOOTER_HOME_H;
+
 // Draws just the footer feed-status pulse dot (color + 250ms blink) into `g`.
-// uiRender()/drawFooter() call this as part of a full frame; btc_ticker.ino's
+// uiDrawFooter() calls this as part of a full frame; btc_ticker.ino's
 // updateFeedPulse() also calls it directly against the live panel on its own
 // fast cadence, bypassing the full-frame sprite render + SPI push so the
 // blink stays smooth without redrawing the whole dashboard 4x as often.
@@ -33,10 +66,12 @@ void uiDrawFeedPulse(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t priceOkMs)
 // gfx fallback), COL_* keep their RGB565 defaults.
 void uiUsePalette(lgfx::LGFX_Sprite& spr);
 
-// Renders the settings list page: grouped rows (MARKET DATA / CHART /
-// DISPLAY) with section headers, value labels or toggle glyphs, shifted up
-// by `scrollPx` (0 = top of the list; caller clamps to uiSettingsMaxScroll()).
-void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx);
+// Renders the settings list page: grouped rows (GLOBAL / BTC TICKER) with
+// section headers, value labels or toggle glyphs, shifted up by `scrollPx`
+// (0 = top of the list; caller clamps to uiSettingsMaxScroll()). Ends with
+// the shared footer (`fs`) below the list — the picker/confirm sub-views
+// (uiRenderSettingsPicker/uiRenderConfirm) don't draw it.
+void uiRenderSettings(lgfx::LovyanGFX* g, int scrollPx, const UiFooterStatus& fs);
 
 // Renders the option-picker page for settings row `row`: a one-line
 // description of the setting, then every option as a radio row with the
@@ -70,8 +105,40 @@ void uiRenderSplash(lgfx::LovyanGFX* g, bool wifiConnected, uint32_t elapsedMs);
 //   0 = split (analog left 50% + 24h digital right 50%)
 //   1 = big analog only
 //   2 = big 24h digital only
-// An "X" close control sits top-left (see UI_CLOCK_CLOSE_* hit zone).
-void uiRenderClock(lgfx::LovyanGFX* g, uint8_t mode);
+// No in-page close control — exit is the shared footer's Home button
+// (btc_ticker.ino's handleTap()). Ends with the shared footer (`fs`) below
+// the clock face(s).
+void uiRenderClock(lgfx::LovyanGFX* g, uint8_t mode, const UiFooterStatus& fs);
+
+// Renders the full-screen Weather page: current conditions + today's hi/lo
+// (top), the next WEATHER_NUM_HOURS hours (middle strip), and
+// WEATHER_NUM_DAYS days of forecast as rows with an iOS-style range bar
+// scaled to the week's overall min/max (bottom). `okMs` is millis() of the
+// last successful fetch (0 = never) for the "updated Nm ago" caption. All
+// hour/weekday labels use wx.tzOffset (the weather location's own UTC
+// offset), not the device's configured TZ. `city` is the caption in the
+// top-left corner, taken as a parameter (like uiRenderWifiSetup()'s SSID)
+// rather than #including config.h here, so ui.cpp stays presentation-only.
+// No in-page controls — exit is the shared footer's Home button. Ends with
+// the shared footer (`fs`) below the 5-day forecast.
+void uiRenderWeather(lgfx::LovyanGFX* g, const WeatherData& wx, uint32_t okMs, const char* city,
+                     const UiFooterStatus& fs);
+
+// Renders the full-screen Calendar page: a single month view (no other
+// views/navigation) for the current month/year off the device's synced
+// clock, Sunday-first, with today's cell highlighted. No in-page controls —
+// exit is the shared footer's Home button. Ends with the shared footer
+// (`fs`) below the grid.
+void uiRenderCalendar(lgfx::LovyanGFX* g, const UiFooterStatus& fs);
+
+// Renders the HOME launcher: a 4-column x 3-row grid of square app tiles
+// (iPad-style), filled left-to-right/top-to-bottom starting with BTC
+// TICKER, CLOCK, Settings — remaining slots stay empty so future apps can
+// drop into the next free slot with no layout change. This is the default
+// landing page; apps are entered by tapping a tile and left only via the
+// footer Home button (no in-app back/close controls). Ends with the shared
+// footer (`fs`) — the empty bottom grid rows leave room for it.
+void uiRenderHome(lgfx::LovyanGFX* g, const UiFooterStatus& fs);
 
 // Overlays the 3px touch-feedback border on all 4 sides of the current
 // frame — drawn for one frame every time a touch registers. The right side
@@ -84,7 +151,7 @@ void uiSetNightMode(bool on);
 
 // Tells the UI where a finger is currently pressed (or that it was
 // released), so renderers can draw pressed-state highlights (settings rows,
-// gear button). Call on every touch state change, before renderIfDue(true).
+// home tiles). Call on every touch state change, before renderIfDue(true).
 void uiSetPressedPoint(int x, int y, bool down);
 
 // Maps a tap at absolute screen y `ty` (below the title bar) to a settings
@@ -102,31 +169,21 @@ int uiSettingsMaxScroll();
 // picker's layout math with uiRenderSettingsPicker.
 int uiPickerOptionAt(int row, int ty);
 
-// Dashboard: touch anywhere in this box (bottom-right corner) opens Settings.
-// The gear button itself spans roughly x=288..316 (flush with the right edge
-// every other element respects); this zone is deliberately wider for a
-// comfortable touch target — nothing else in the footer is tappable.
-static const int UI_GEAR_HIT_X0 = 230;
-static const int UI_GEAR_HIT_Y0 = 200;
+// Maps a tap at absolute screen (x, y) on the HOME page to a tile slot
+// index (0..UI_HOME_SLOT_COUNT-1, row-major left-to-right/top-to-bottom),
+// or -1 if the tap missed every tile / hit an empty slot. Shares the grid
+// layout math with uiRenderHome so drawing and hit-testing can't drift.
+int uiHomeTileAt(int x, int y);
 
-// Dashboard: tap the centered status-bar clock to enter full-screen clock.
-// Generous for resistive touch — covers HH:MM:SS plus a little padding, and
-// avoids the left status pulse/wifi and the right-side date.
-static const int UI_CLOCK_HIT_X0 = 95;
-static const int UI_CLOCK_HIT_X1 = 225;
-static const int UI_CLOCK_HIT_Y0 = 0;
-static const int UI_CLOCK_HIT_Y1 = 28;
-
-// Full-screen clock page: "X" close control top-left. Hit zone is larger than
-// the drawn glyph (resistive); drawing uses a 28x24 outlined icon button.
-static const int UI_CLOCK_CLOSE_HIT_X0 = 0;
-static const int UI_CLOCK_CLOSE_HIT_X1 = 44;
-static const int UI_CLOCK_CLOSE_HIT_Y0 = 0;
-static const int UI_CLOCK_CLOSE_HIT_Y1 = 36;
-static const int UI_CLOCK_CLOSE_BTN_X  = 4;
-static const int UI_CLOCK_CLOSE_BTN_Y  = 4;
-static const int UI_CLOCK_CLOSE_BTN_W  = 28;
-static const int UI_CLOCK_CLOSE_BTN_H  = 24;
+// HOME grid geometry: 4 columns x 3 rows of square tiles, only the first
+// UI_HOME_APP_COUNT slots populated (BTC TICKER, CLOCK, Settings, Weather,
+// Calendar — in that slot order, matched to btc_ticker.ino's HOME_SLOT_PAGE
+// and this file's HOME_APP_LABELS/uiRenderHome icon dispatch). Shared
+// between uiRenderHome and uiHomeTileAt.
+static const int UI_HOME_COLS = 4;
+static const int UI_HOME_ROWS = 3;
+static const int UI_HOME_SLOT_COUNT = UI_HOME_COLS * UI_HOME_ROWS;
+static const int UI_HOME_APP_COUNT = 5;
 
 // Clock display modes for uiRenderClock / cycle-on-tap.
 static const uint8_t UI_CLOCK_MODE_SPLIT  = 0;

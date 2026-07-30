@@ -45,7 +45,7 @@ static const int PRICE_IV_COUNT = 5;
 extern const uint32_t PRICE_IV_MS[PRICE_IV_COUNT];
 extern const char* const PRICE_IV_LABEL[PRICE_IV_COUNT];
 
-static const int CANDLE_IV_COUNT = 4;
+static const int CANDLE_IV_COUNT = 5;
 extern const uint32_t CANDLE_IV_SEC[CANDLE_IV_COUNT];
 extern const char* const CANDLE_IV_LABEL[CANDLE_IV_COUNT];   // also the Binance interval strings
 

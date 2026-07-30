@@ -12,8 +12,8 @@ const char* const BRI_LABEL[BRI_COUNT] = {"1%", "5%", "25%", "50%", "75%", "100%
 const uint32_t PRICE_IV_MS[PRICE_IV_COUNT] = {1000, 5000, 10000, 60000, 300000};
 const char* const PRICE_IV_LABEL[PRICE_IV_COUNT] = {"1s", "5s", "10s", "1m", "5m"};
 
-const uint32_t CANDLE_IV_SEC[CANDLE_IV_COUNT] = {300, 900, 3600, 14400};
-const char* const CANDLE_IV_LABEL[CANDLE_IV_COUNT] = {"5m", "15m", "1h", "4h"};
+const uint32_t CANDLE_IV_SEC[CANDLE_IV_COUNT] = {300, 900, 1800, 3600, 14400};
+const char* const CANDLE_IV_LABEL[CANDLE_IV_COUNT] = {"5m", "15m", "30m", "1h", "4h"};
 
 const uint32_t RANGE_SEC[RANGE_COUNT] = {12UL * 3600, 24UL * 3600, 7UL * 24 * 3600};
 const char* const RANGE_LABEL[RANGE_COUNT] = {"12h", "24h", "7D"};
@@ -74,6 +74,20 @@ uint8_t settingsOptionIndex(int row) {
 }
 
 void settingsLoad(Preferences& p) {
+  // One-time migration: "30m" was inserted at index 2 of CANDLE_IV_SEC/
+  // CANDLE_IV_LABEL (old layout was {5m,15m,1h,4h}; new is {5m,15m,30m,1h,
+  // 4h}), which silently reinterprets any already-persisted s.cIv >= 2 as
+  // the wrong interval. Bump such a value up by one so it still names the
+  // same time interval, then mark migrated so this only ever runs once. A
+  // fresh device (no "s.cIv" key yet) has nothing to migrate.
+  if (!p.isKey("s.civM")) {
+    if (p.isKey("s.cIv")) {
+      uint8_t raw = p.getUChar("s.cIv", 0);
+      if (raw >= 2) p.putUChar("s.cIv", (uint8_t)(raw + 1));
+    }
+    p.putUChar("s.civM", 1);
+  }
+
   for (int r = 0; r < ROW_COUNT; r++) {
     const RowMeta& m = ROW_META[r];
     if (!m.field) continue;  // action row (ROW_FORGET_AP): nothing to load
@@ -109,7 +123,7 @@ uint16_t settingsSet(int row, uint8_t idx) {
       gSettings.rangeIdx = 1;  // 7D -> 24h
       mask |= (uint16_t)(1u << ROW_RANGE);
     } else {
-      gSettings.candleIvIdx = 2;  // 5m/15m -> 1h
+      gSettings.candleIvIdx = 3;  // 5m/15m/30m -> 1h
       mask |= (uint16_t)(1u << ROW_CANDLE_IV);
     }
   }
